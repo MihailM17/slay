@@ -18,6 +18,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # full history + tags: tauri-action needs the tag ref present
+          # to know which release to upload bundles to
+          fetch-depth: 0
 
       - name: install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
