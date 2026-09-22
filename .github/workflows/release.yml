@@ -43,5 +43,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         with:
           tagName: ${{ github.ref_name }}
+          releaseName: 'Slay __VERSION__'
+          releaseBody: "Slay hex-strategy remake.\n\nmacOS: open the .dmg, drag to Applications.\nWindows: run the -setup.exe installer.\nLinux / Omarchy: chmod +x the .AppImage and run it (.deb attached too)."
+          releaseDraft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
