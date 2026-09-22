@@ -7,12 +7,14 @@ combine them into barons, and bankrupt your enemies by cutting their empires in 
 
 ## Play
 
-- **macOS**: grab `Slay_*.dmg` from [Releases](../../releases), drag to Applications, double-click.
+Download for your system from [Releases](../../releases):
+
+- **macOS**: `Slay_*.dmg` → drag to Applications, double-click.
   First launch may ask for right-click → Open (unsigned indie build).
-- **Linux (incl. Omarchy)**: clone, `npm install`, `npm run tauri build` — then run the bundle.
+- **Windows**: run the `*-setup.exe` installer (unsigned: SmartScreen → *More info → Run anyway*).
+- **Linux / Omarchy**: download the `.AppImage`, `chmod +x`, double-click — runs
+  anywhere including Arch-based distros (a `.deb` is attached too for Debian/Ubuntu).
   If `~/.config/omarchy` exists, the app offers your active Omarchy theme in-game.
-- **iOS** (free Apple ID, no paid dev account): `npm run tauri ios init`, open the
-  Xcode project, pick your Personal Team, run on your device. Re-sign weekly.
 
 ## Rules (the real ones)
 
@@ -55,6 +57,11 @@ npm run tauri dev        # UI hot-reloads against src/
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri build      # → Slay.app + .dmg (macOS) / bundles (Linux)
 ```
+
+Releases are built by CI ([`release.yml`](.github/workflows/release.yml)) on every
+`v*` tag: Windows, Linux (AppImage + deb) and macOS binaries all attach automatically.
+**iOS** (free Apple ID, no paid dev account): `npm run tauri ios init`, open the
+Xcode project, pick your Personal Team, run on your device. Re-sign weekly.
 
 Icon: handmade, `Graphic_Design/Handmade Icons/slay icon.png` (not in repo).
 
