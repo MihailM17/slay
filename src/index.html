@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="atoll">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Slay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <h1><span class="mark">◈</span><span id="gametitle">Slay</span></h1>
+    <div class="chips">
+      <div class="chip">Round <b id="chip-round">1</b></div>
+      <div class="chip">Seed <b id="chip-seed">–</b></div>
+      <div class="chip">Map <b id="chip-arch">–</b></div>
+      <div class="chip">AI <b id="chip-diff">Normal</b></div>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <div class="panel mapwrap">
+      <span class="tick-bl"></span><span class="tick-br"></span>
+      <div class="panel-head">
+        <h2 id="mapname">The island</h2>
+        <span class="hint" id="turnhint">your move</span>
+      </div>
+      <div class="mapstage">
+        <div class="hexfield" id="hexfield"></div>
+      </div>
+      <div class="maplegend" id="maplegend"></div>
+    </div>
+
+    <div class="sidebar">
+
+      <div class="panel">
+        <div class="panel-head"><h2>Standings</h2></div>
+        <div class="panel-body">
+          <table class="rows" id="standings"></table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Treasury</h2><span class="hint" id="treasury-sub"></span></div>
+        <div class="panel-body">
+          <div class="stat3">
+            <div><div class="n pos" id="st-income">+0</div><div class="l">income</div></div>
+            <div><div class="n" id="st-wages">0</div><div class="l">wages</div></div>
+            <div><div class="n pos" id="st-net">+0</div><div class="l">net / turn</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Recruit</h2></div>
+        <div class="panel-body">
+          <p class="selnote" id="recruit-note">Click one of your open hexes.</p>
+          <div class="costrow" id="row-peasant">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3" fill="currentColor"/><path d="M6 21c0-4 3-7 6-7s6 3 6 7" fill="currentColor"/></svg>
+            <span id="btn-peasant-label">Peasant</span><span class="g">10g</span>
+          </div>
+          <div class="costrow" id="row-castle">
+            <svg viewBox="0 0 24 24"><path d="M4 21V10h3V7h2v3h2V5h2v5h2V7h2v3h3v11z" fill="currentColor"/></svg>
+            <span id="btn-castle-label">Castle</span><span class="g">15g</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="bottomboxes">
+    <details class="panel box">
+      <summary><span class="arrow">▸</span>Controls</summary>
+      <div class="panel-body keys">
+        <div class="row"><kbd>Click</kbd><span>select / order</span></div>
+        <div class="row"><kbd>Enter</kbd><span>select / order</span></div>
+        <div class="row"><kbd>X</kbd><span>peasant</span></div>
+        <div class="row"><kbd>C</kbd><span>castle</span></div>
+        <div class="row"><kbd>Space</kbd><span>end turn</span></div>
+        <div class="row"><kbd>E</kbd><span>end turn</span></div>
+        <div class="row"><kbd>M</kbd><span>sound</span></div>
+        <div class="row"><kbd>H</kbd><span>help</span></div>
+        <div class="row"><kbd>N</kbd><span>new island</span></div>
+      </div>
+    </details>
+
+    <details class="panel box">
+      <summary><span class="arrow">▸</span>Theme <span class="hint" id="theme-name">atoll</span></summary>
+      <div class="panel-body">
+        <select id="theme-select" class="widesel"></select>
+        <p class="tiny">Every Omarchy theme, built in. Auto-uses yours when found.</p>
+      </div>
+    </details>
+
+    <details class="panel box">
+      <summary><span class="arrow">▸</span>Field notes</summary>
+      <div class="panel-body notes" id="fieldnotes"></div>
+    </details>
+  </div>
+
+  <div class="logbar" id="logbar">
+    <svg viewBox="0 0 24 24"><path d="M12 2 2 8l10 6 10-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M6 11v6c0 1.7 2.7 3 6 3s6-1.3 6-3v-6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+    <span id="logtext">Welcome to the island.</span>
+  </div>
+
+  <div class="statusline">
+    <span>SLAY/OS <b>v0.1.0</b></span>
+    <span id="st-line">–</span>
+    <span>THEME <b id="st-theme">atoll</b></span>
+  </div>
+
+</div>
+
+<div class="overlay" id="start-overlay">
+  <div class="card">
+    <h1 class="display"><span class="mark">◈</span> Slay</h1>
+    <p class="sub">hex strategy · buy peasants, combine them into barons, starve your foes</p>
+    <div class="boot">
+      <div>SLAY/OS v0.1.0 — hexfield driver ............ <span class="ok">[OK]</span></div>
+      <div>island generator (isle/atoll/lakes) ......... <span class="ok">[OK]</span></div>
+      <div>karg &amp; vex combat routines ............... <span class="ok">[OK]</span></div>
+    </div>
+    <div class="optrow"><span>Foes</span><div class="seg" id="seg-foes">
+      <button data-v="1">1</button><button data-v="2" class="on">2</button><button data-v="3">3</button>
+    </div></div>
+    <div class="optrow"><span>Difficulty</span><div class="seg" id="seg-diff">
+      <button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button>
+    </div></div>
+    <div class="optrow"><span>Island</span><div class="seg" id="seg-size">
+      <button data-v="0" class="on">Classic</button><button data-v="1">Large</button><button data-v="2">Huge</button>
+    </div></div>
+    <div class="optrow"><span>Seed</span><div class="seedrow">
+      <input id="seed-input" placeholder="random" inputmode="numeric">
+      <button id="seed-dice" title="Random seed">⚄</button>
+    </div></div>
+    <button class="btn big" id="btn-start">Invade →</button>
+    <p class="tiny">wages ♟2 ♝6 ♞18 ♚54 · earn 1 per clear hex · cut foes in half</p>
+  </div>
+</div>
+
+<div class="overlay hidden" id="end-overlay">
+  <div class="card">
+    <h1 class="display" id="end-title">Victory</h1>
+    <p class="sub" id="end-sub"></p>
+    <div class="btnrow">
+      <button class="btn" id="btn-same">↻ Same island</button>
+      <button class="btn big" id="btn-new">⚄ New island</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="help-overlay">
+  <div class="card wide">
+    <h1 class="display">Rules of the island</h1>
+    <div class="helpgrid">
+      <div>
+        <h3>Money</h3>
+        <p>Every territory earns <b>1 gold per clear hex</b> each turn, then pays wages: <b>♟2 · ♝6 · ♞18 · ♚54</b>. Can't pay? <b>Every man starves</b> into a grave, then a pine. Castles cost nothing.</p>
+        <p>Buy <b>X peasant (10g)</b> or <b>C castle (15g, defends 2)</b>. Only peasants are sold — grow armies by <b>stacking two men</b> (1+1=♝, 1+2=♞, max ♚).</p>
+      </div>
+      <div>
+        <h3>War</h3>
+        <p>Click a bright man, then a glowing target. Attacks must be <b>strictly stronger</b> than the defence. Men, ♜2, houses 1 and graves 1 also guard <b>neighbouring own hexes</b>.</p>
+        <p>♟ can't touch ♟ lines · ♝ kills ♟ · only ♞+ cracks a ♜.</p>
+      </div>
+      <div>
+        <h3>Cutting</h3>
+        <p>Split a foe in two and the half <b>without the house starts at 0 gold</b> and starves. Linking your lands merges treasuries. Gold houses (⌂) can buy; grey ones are broke.</p>
+        <p>Trees spread every turn and pay nothing — keep chopping.</p>
+    </div>
+  </div>
+
+    <button class="btn big" id="btn-close-help">Back to war</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
