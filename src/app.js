@@ -61,6 +61,7 @@ function playSfx(name) {
     castle: [[150, 0.2, 'triangle', 0.08]],
     error: [[110, 0.15, 'square', 0.05]],
     turn: [[500, 0.08, 'sine', 0.04], [400, 0.1, 'sine', 0.04, 0.08]],
+    undo: [[300, 0.07, 'sine', 0.04], [380, 0.08, 'sine', 0.04, 0.07]],
     win: [[523, 0.1, 'square', 0.05], [659, 0.1, 'square', 0.05, 0.1], [784, 0.1, 'square', 0.05, 0.2], [1046, 0.22, 'square', 0.05, 0.3]],
     lose: [[400, 0.14, 'sawtooth', 0.05], [300, 0.14, 'sawtooth', 0.05, 0.13], [200, 0.24, 'sawtooth', 0.05, 0.26]],
   }[name];
@@ -952,6 +953,8 @@ async function boot() {
   $('btn-close-help').addEventListener('click', () => $('help-overlay').classList.add('hidden'));
   $('row-peasant').addEventListener('click', () => cmd('buy', { kind: 'man' }));
   $('row-castle').addEventListener('click', () => cmd('buy', { kind: 'castle' }));
+  $('btn-end-turn').addEventListener('click', () => cmd('end_turn'));
+  $('btn-undo').addEventListener('click', () => cmd('undo'));
   $('btn-end-turn').addEventListener('click', () => cmd('end_turn'));
 
   // themes: Atoll house default + every real Omarchy palette in a dropdown

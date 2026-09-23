@@ -17,6 +17,8 @@ Download for your system from [Releases](../../releases):
 - **Linux / Omarchy**: download the `.AppImage`, `chmod +x`, double-click — runs
   anywhere including Arch-based distros (a `.deb` is attached too for Debian/Ubuntu).
   If `~/.config/omarchy` exists, the app offers your active Omarchy theme in-game.
+- **Android**: sideload the debug `.apk` from Releases (no dev account needed) —
+  or build it yourself (see Develop). Best on larger screens; touch supported.
 
 ## Rules (the real ones)
 

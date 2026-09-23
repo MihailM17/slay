@@ -72,6 +72,7 @@ pub struct Terr {
     pub capital: Option<(i32, i32)>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Game {
     pub cols: i32,
     pub rows: i32,
@@ -94,6 +95,7 @@ pub struct Game {
     pub custom: Option<CustomSpec>,
     pub tut_pine: Option<(i32, i32)>,
     pub fx: Vec<Fx>,
+    history: Vec<Game>,
     rng: StdRng,
 }
 
@@ -190,6 +192,7 @@ impl Game {
             custom: custom.clone(),
             tut_pine: None,
             fx: vec![],
+            history: vec![],
             rng: StdRng::seed_from_u64(seed ^ 0x9e3779b97f4a7c15),
         };
         if custom_ok {
@@ -241,6 +244,29 @@ impl Game {
         g.say("Buy peasants, grow, combine into armies.");
         g.say("Cut enemies in half - the poor side starves.");
         g
+    }
+
+    /// Snapshot for undo. History itself is never nested.
+    fn push_history(&mut self) {
+        let mut snap = self.clone();
+        snap.history = Vec::new();
+        snap.fx = Vec::new();
+        self.history.push(snap);
+        if self.history.len() > 100 {
+            self.history.remove(0);
+        }
+    }
+
+    pub fn undo(&mut self) -> bool {
+        match self.history.pop() {
+            Some(prev) => {
+                let hist = std::mem::take(&mut self.history);
+                *self = prev;
+                self.history = hist;
+                true
+            }
+            None => false,
+        }
     }
 
     // ---------- rng helpers ----------
@@ -627,6 +653,7 @@ impl Game {
 
     pub fn do_attack(&mut self, fx: i32, fy: i32, tx: i32, ty: i32, who: i8) -> Result<String, String> {
         self.can_attack(fx, fy, tx, ty)?;
+        self.push_history();
         let s = self.grid[Self::idx(self.cols, fx, fy)].unit;
         let ti = Self::idx(self.cols, tx, ty);
         {
@@ -669,6 +696,7 @@ impl Game {
             if s > 4 {
                 return Err("Too strong to combine (max Baron).".to_string());
             }
+            self.push_history();
             self.grid[ti2].unit = s;
             self.grid[ti2].acted = true;
             let fi = Self::idx(self.cols, fx, fy);
@@ -683,6 +711,7 @@ impl Game {
         if self.grid[ti2].owner != fowner {
             return Err("Move inside your own territory.".to_string());
         }
+        self.push_history();
         let chop = self.grid[ti2].tree.is_some();
         {
             let th = &mut self.grid[ti2];
@@ -723,6 +752,7 @@ impl Game {
                 return Err("Chop the tree first.".to_string());
             }
         }
+        self.push_history();
         {
             let h = &mut self.grid[Self::idx(self.cols, x, y)];
             if kind == "castle" {
@@ -797,6 +827,7 @@ impl Game {
     /// HUMAN turn (AI opponents in between play immediately). The round
     /// counter ticks over each time play wraps back to the first seat.
     pub fn advance_turn(&mut self) {
+        self.push_history();
         self.sel = None;
         let n = self.players.len();
         let mut idx = self.players.iter().position(|&p| p == self.current).unwrap_or(0);
@@ -1669,6 +1700,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn undo_restores_everything() {
+        let mut g = Game::new(Some(11), 1, "normal", 0, vec![0], false, None);
+        g.start_turn(0);
+        assert!(!g.undo(), "empty history");
+        let (sx, sy) = g.starts[0];
+        let ti = g.terr_at(sx, sy).unwrap();
+        let gold_before = g.terrs[ti].savings;
+        g.buy(sx, sy, "man", 0).unwrap();
+        assert_eq!(g.grid[Game::idx(g.cols, sx, sy)].unit, 1);
+        assert!(g.undo());
+        assert_eq!(g.grid[Game::idx(g.cols, sx, sy)].unit, 0);
+        assert_eq!(g.terr_at(sx, sy).map(|i| g.terrs[i].savings), Some(gold_before));
+        // attack then undo restores the border
+        g.buy(sx, sy, "man", 0).unwrap();
+        let tgt = g.neighbours(sx, sy).into_iter().find(|&(nx, ny)| {
+            let h = &g.grid[Game::idx(g.cols, nx, ny)];
+            h.owner == -1 && !h.water
+        }).unwrap();
+        g.do_attack(sx, sy, tgt.0, tgt.1, 0).unwrap();
+        assert_eq!(g.grid[Game::idx(g.cols, tgt.0, tgt.1)].owner, 0);
+        assert!(g.undo());
+        assert_eq!(g.grid[Game::idx(g.cols, tgt.0, tgt.1)].owner, -1);
+        // a whole round-trip unwinds too
+        let round = g.round;
+        g.advance_turn();
+        assert!(g.round >= round);
+        assert!(g.undo());
+        assert_eq!(g.round, round);
     }
 
     #[test]

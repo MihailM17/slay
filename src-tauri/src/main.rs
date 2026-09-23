@@ -112,6 +112,18 @@ fn buy(state: State<AppState>, kind: String) -> UiState {
 }
 
 #[tauri::command]
+fn undo(state: State<AppState>) -> UiState {
+    let mut g = state.0.lock().unwrap();
+    g.fx.clear();
+    let (msg, sfx) = if g.undo() {
+        ("Undone.".to_string(), "undo".to_string())
+    } else {
+        ("Nothing to undo.".to_string(), String::new())
+    };
+    g.snapshot(msg, sfx)
+}
+
+#[tauri::command]
 fn cancel_sel(state: State<AppState>) -> UiState {
     let mut g = state.0.lock().unwrap();
     g.sel = None;
@@ -206,6 +218,7 @@ fn main() {
             click_hex,
             buy,
             cancel_sel,
+            undo,
             end_turn,
             rematch,
             omarchy_theme

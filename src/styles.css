@@ -266,8 +266,10 @@ html[data-theme="parchment"] .seedrow input{background:#e4dac4;}
 .maprow button:hover{color:var(--ink); border-color:var(--ink-dim);}
 .maprow button.play{color:var(--you); border-color:var(--you);}
 .btnrow{display:flex; gap:10px; margin-top:18px;}
+.btnrow.tight{margin-top:12px;}
 .btnrow.navrow{margin-top:14px;}
 .btnrow .btn{flex:1;}
+#btn-undo{flex:none; padding-left:14px; padding-right:14px;}
 .liblist{max-height:38dvh; overflow-y:auto; padding-right:4px;}
 .tiny{font-size:11px; color:var(--ink-faint); margin:14px 0 0;}
 .helpgrid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; font-size:12.5px; color:var(--ink-dim); line-height:1.5; margin-bottom:20px;}
