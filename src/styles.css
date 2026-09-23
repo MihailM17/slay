@@ -120,7 +120,6 @@ body::after{
 .owner-vex > .hexbg{background:var(--vex-bg);} .owner-vex{color:var(--vex);}
 .owner-mord > .hexbg{background:var(--mord-bg);} .owner-mord{color:var(--mord);}
 .hex.spent svg{opacity:.45;}
-.hex.target-foe{filter:drop-shadow(0 0 9px #58d68d) drop-shadow(0 0 3px #58d68d);}
 .hex .move-dot{
   position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px;
   border-radius:50%;
@@ -149,8 +148,9 @@ body::after{
 @keyframes hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 .hex.pickable .bob{animation:hop .9s ease-in-out infinite;}
 @media (prefers-reduced-motion: reduce){ .hex.pickable .bob{animation:none;} }
-.selected{filter:drop-shadow(0 0 7px var(--gold)) drop-shadow(0 0 2px var(--gold));}
-.target{filter:drop-shadow(0 0 5px #58d68d);}
+/* NOTE: selection/target/cursor outlines live ONLY in the #ringlayer
+   overlay (crisp SVG, never buried). No drop-shadow glows here — they
+   painted unevenly under later hex rows. */
 
 .maplegend{display:flex; flex-wrap:wrap; gap:14px; padding:8px 14px 12px; font-size:11px; letter-spacing:.5px; color:var(--ink-dim); text-transform:uppercase;}
 .maplegend span{display:inline-flex; align-items:center; gap:6px;}

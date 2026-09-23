@@ -187,14 +187,10 @@ function hexPt(x0, y0, i, inset = 0.9) {
   const ax = x0 + vx, ay = y0 + vy;
   return [cx + (ax - cx) * inset, cy + (ay - cy) * inset];
 }
-function edgeSeg(x0, y0, e) {
-  const [ax, ay] = hexPt(x0, y0, e), [bx, by] = hexPt(x0, y0, (e + 1) % 6);
-  return `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)} `;
-}
-function hexPoly(x0, y0) {
+function hexPoly(x0, y0, inset = 0.9) {
   let d = '';
   for (let e = 0; e < 6; e++) {
-    const [ax, ay] = hexPt(x0, y0, e);
+    const [ax, ay] = hexPt(x0, y0, e, inset);
     d += (e ? 'L' : 'M') + ` ${ax.toFixed(1)} ${ay.toFixed(1)} `;
   }
   return d + 'Z';
@@ -303,6 +299,8 @@ function render(s) {
       // the selected hex already wears gold: keep guard blue off it
       const selKey = s.sel ? s.sel[0] + ',' + s.sel[1] : null;
       let perim = '', guardP = '';
+      const dots = new Set();
+      const dot = (x, y) => dots.add(x.toFixed(1) + ',' + y.toFixed(1));
       for (const key of outline) {
         const [x, y] = key.split(',').map(Number);
         const p = at(x, y);
@@ -310,10 +308,20 @@ function render(s) {
         for (const dk in offs) {
           const [dx, dy] = dk.split(',').map(Number);
           if (!outline.has((x + dx) + ',' + (y + dy))) {
-            perim += edgeSeg(p.left, p.top, offs[dk]);
+            const e = offs[dk];
+            const [ax, ay] = hexPt(p.left, p.top, e);
+            const [bx, by] = hexPt(p.left, p.top, (e + 1) % 6);
+            perim += `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)} `;
+            dot(ax, ay);
+            dot(bx, by);
           }
         }
-        if (guard.has(key) && key !== selKey) guardP += hexPoly(p.left, p.top);
+        // guard lives clearly INSIDE the white border, never on top of it
+        if (guard.has(key) && key !== selKey) guardP += hexPoly(p.left, p.top, 0.74);
+      }
+      for (const v of dots) {
+        const [vx, vy] = v.split(',');
+        perim += `M ${vx} ${vy} L ${vx} ${vy} `;
       }
       shape(perim, 'rl-perim', pcol);
       if (guardP) shape(guardP, 'rl-guard');
