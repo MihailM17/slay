@@ -820,7 +820,9 @@ impl Game {
 
     pub fn ai_take_turn(&mut self, ai: i8) {
         self.start_turn(ai);
-        let aggro = if ai == 1 { 1.0 } else { 0.6 };
+        // hard mode: every seat plays with Karg's aggression and forts up
+        // much earlier. Easy turtles; normal mixes it up; hard hunts.
+        let aggro = if ai == 1 || self.difficulty == "hard" { 1.0 } else { 0.6 };
         let mut used = BTreeSet::new();
         for ti in self.terrs_of(ai) {
             for (cx, cy) in self.choke_hexes(ti) {
@@ -855,29 +857,8 @@ impl Game {
     }
 
     fn ai_step(&mut self, ai: i8, aggro: f64) -> bool {
-        // 1) chop income-denying trees
         let tis = self.terrs_of(ai);
-        for &ti in &tis {
-            let hexes: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
-            for (x, y) in hexes {
-                let hi = Self::idx(self.cols, x, y);
-                if self.grid[hi].unit == 0 || self.grid[hi].acted {
-                    continue;
-                }
-                for (nx, ny) in self.neighbours(x, y) {
-                    let ni = Self::idx(self.cols, nx, ny);
-                    let ok = self.terrs[ti].hexes.contains(&(nx, ny))
-                        && self.grid[ni].tree.is_some()
-                        && self.grid[ni].unit == 0
-                        && !self.grid[ni].castle
-                        && Some((nx, ny)) != self.terrs[ti].capital;
-                    if ok && self.do_move(x, y, nx, ny).is_ok() {
-                        return true;
-                    }
-                }
-            }
-        }
-        // 2) best attack, with a big bonus for cuts
+        // 1) best attack, with a big bonus for cuts
         let mut best: Option<(f64, i32, i32, i32, i32)> = None;
         for &ti in &tis {
             let hexes: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
@@ -922,7 +903,7 @@ impl Game {
                 return true;
             }
         }
-        // 3) buy only with a purpose and only if next payday survives
+        // 2) buy only with a purpose and only if next payday survives
         let easy = self.difficulty == "easy";
         let mut order = self.terrs_of(ai);
         order.sort_by_key(|&ti| -(self.terrs[ti].hexes.len() as i64));
@@ -944,7 +925,7 @@ impl Game {
                 }
             }
         }
-        // 4) combine if next payday covers it
+        // 3) combine if next payday covers it
         for ti in self.terrs_of(ai) {
             let wages = self.terr_wages(ti);
             let income = self.terr_income(ti);
@@ -975,9 +956,101 @@ impl Game {
                 }
             }
         }
-        // 5) castle threatened rich borders
+        // 4) reposition: idle fresh men teleport to a front hex where they
+        // can bite something next call (moves are free and don't tire).
+        // Holding men stay put; garrisoned chokes stay manned.
+        for &ti in &tis {
+            let choke: BTreeSet<(i32, i32)> = self.choke_hexes(ti).into_iter().collect();
+            let hexes: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
+            for (x, y) in hexes {
+                let (u, acted) = {
+                    let h = &self.grid[Self::idx(self.cols, x, y)];
+                    (h.unit, h.acted)
+                };
+                if u == 0 || acted || choke.contains(&(x, y)) {
+                    continue;
+                }
+                let mut useful = false;
+                for (tx, ty) in self.targets_around(ti, x, y) {
+                    if self.can_attack(x, y, tx, ty).is_ok() {
+                        useful = true;
+                        break;
+                    }
+                }
+                if useful {
+                    continue;
+                }
+                // holding a threatened border: don't open the gate
+                let threatened = self.neighbours(x, y).iter().any(|&(nx, ny)| {
+                    let nh = &self.grid[Self::idx(self.cols, nx, ny)];
+                    nh.owner != -1 && nh.owner != ai && nh.unit != 0
+                });
+                if threatened {
+                    continue;
+                }
+                // empty front hex whose weakest neighbour this man can take
+                let mut spot: Option<(f64, i32, i32)> = None;
+                let fronts: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
+                for (fx, fy) in fronts {
+                    {
+                        let fh = &self.grid[Self::idx(self.cols, fx, fy)];
+                        if fh.unit != 0 || fh.castle || fh.grave
+                            || Some((fx, fy)) == self.terrs[ti].capital
+                        {
+                            continue;
+                        }
+                    }
+                    let mut weakest = 99u8;
+                    let mut touches_outside = false;
+                    for (tx, ty) in self.neighbours(fx, fy) {
+                        let ni = Self::idx(self.cols, tx, ty);
+                        let nh = &self.grid[ni];
+                        if nh.water || nh.owner == ai {
+                            continue;
+                        }
+                        touches_outside = true;
+                        weakest = weakest.min(self.defence(tx, ty));
+                    }
+                    if !touches_outside || weakest >= u {
+                        continue;
+                    }
+                    let score = -(weakest as f64) + self.rf();
+                    if spot.map_or(true, |(b, _, _)| score > b) {
+                        spot = Some((score, fx, fy));
+                    }
+                }
+                if let Some((_, fx, fy)) = spot {
+                    if self.do_move(x, y, fx, fy).is_ok() {
+                        return true;
+                    }
+                }
+            }
+        }
+        // 5) chop with men that have nothing better to do
+        for &ti in &tis {
+            let hexes: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
+            for (x, y) in hexes {
+                let hi = Self::idx(self.cols, x, y);
+                if self.grid[hi].unit == 0 || self.grid[hi].acted {
+                    continue;
+                }
+                for (nx, ny) in self.neighbours(x, y) {
+                    let ni = Self::idx(self.cols, nx, ny);
+                    let ok = self.terrs[ti].hexes.contains(&(nx, ny))
+                        && self.grid[ni].tree.is_some()
+                        && self.grid[ni].unit == 0
+                        && !self.grid[ni].castle
+                        && Some((nx, ny)) != self.terrs[ti].capital;
+                    if ok && self.do_move(x, y, nx, ny).is_ok() {
+                        return true;
+                    }
+                }
+            }
+        }
+        // 6) castle threatened rich borders (hard forts up much earlier)
         for ti in self.terrs_of(ai) {
-            if self.terrs[ti].savings < 45 {
+            let castle_at = if self.difficulty == "hard" { 30 } else { 45 };
+            if self.terrs[ti].savings < castle_at {
                 continue;
             }
             let hexes: Vec<(i32, i32)> = self.terrs[ti].hexes.iter().cloned().collect();
@@ -1049,6 +1122,26 @@ impl Game {
                 }
             }
         }
+        // Too few men to ever combine: buy a seed garrison from scratch,
+        // or a partner for one lonely fresh man (peasants become spearmen,
+        // which crack def-1 lines). The buy gate still enforces next-payday
+        // solvency, and the combine step fires right after in the same turn,
+        // so this builds exactly the pair the combine step consumes.
+        // (Men that already acted are busy fighting, not missing.)
+        let mut total = 0;
+        let mut fresh_below_baron = false;
+        for &(x, y) in hexes {
+            let h = &self.grid[Self::idx(self.cols, x, y)];
+            if h.unit != 0 {
+                total += 1;
+                if !h.acted && h.unit < 4 {
+                    fresh_below_baron = true;
+                }
+            }
+        }
+        if total == 0 || (total == 1 && fresh_below_baron) {
+            return true;
+        }
         false
     }
 
@@ -1065,6 +1158,16 @@ impl Game {
                 if h.unit != 0 || h.castle || h.grave || Some((x, y)) == cap {
                     continue;
                 }
+            }
+            // garrisons belong on the border: interior peasants just eat
+            // the wages that would otherwise bank a breakthrough army.
+            // Rich territories may still buy combine fodder anywhere.
+            let border = self.neighbours(x, y).iter().any(|&(nx, ny)| {
+                let nh = &self.grid[Self::idx(self.cols, nx, ny)];
+                !nh.water && nh.owner != ai
+            });
+            if !border && self.terrs[ti].savings <= 25 {
+                continue;
             }
             let mut score = self.neighbours(x, y).iter().filter(|&&(nx, ny)| {
                 let nh = &self.grid[Self::idx(self.cols, nx, ny)];
@@ -1489,6 +1592,69 @@ mod tests {
     }
 
     #[test]
+    fn ai_sweep_difficulties() {
+        // system-wide AI audit: full AI-vs-AI games per difficulty.
+        // Run with: cargo test ai_sweep -- --nocapture
+        for diff in ["easy", "normal", "hard"] {
+            let mut wins = [0u32; 4];
+            let mut rounds_sum = 0u32;
+            let mut finished = 0u32;
+            let (mut atk, mut cmb, mut buy, mut stv, mut cst) = (0u64, 0, 0, 0, 0);
+            let mut maxrank = 0u8;
+            let mut unfinished = 0u32;
+            let mut seat_wins = [0u32; 4];
+            for seed in 0..9u64 {
+                let mut g = Game::new(Some(seed * 7919 + 11), 2, diff, 0, vec![0], false, None);
+                g.start_turn(0);
+                let mut done = None;
+                for rnd in 1..=120u32 {
+                    for ai in g.alive() {
+                        g.fx.clear();
+                        g.ai_take_turn(ai);
+                        for e in &g.fx {
+                            match e {
+                                Fx::Attack { .. } => atk += 1,
+                                Fx::Combine { .. } => cmb += 1,
+                                Fx::Buy { castle: c, .. } => {
+                                    buy += 1;
+                                    if *c {
+                                        cst += 1;
+                                    }
+                                }
+                                Fx::Starve { .. } => stv += 1,
+                                _ => {}
+                            }
+                        }
+                        for ti in g.terrs_of(ai) {
+                            for &(x, y) in &g.terrs[ti].hexes.clone() {
+                                maxrank = maxrank.max(g.grid[Game::idx(g.cols, x, y)].unit);
+                            }
+                        }
+                    }
+                    if let Some(w) = g.winner() {
+                        done = Some((w, rnd));
+                        break;
+                    }
+                    g.round += 1;
+                }
+                match done {
+                    Some((w, r)) => {
+                        finished += 1;
+                        rounds_sum += r;
+                        wins[w as usize] += 1;
+                        seat_wins[w as usize] += 1;
+                    }
+                    None => unfinished += 1,
+                }
+            }
+            println!(
+                "[{diff:6}] finished {finished}/9 avg_rounds {:4.1} unfinished {unfinished} attacks {atk:5} combines {cmb:4} buys {buy:4} castles {cst:3} starves {stv:4} max_rank {maxrank} seats {seat_wins:?}",
+                if finished > 0 { rounds_sum as f32 / finished as f32 } else { 0.0 }
+            );
+        }
+    }
+
+    #[test]
     fn starts_never_touch() {
         for size in [0u8, 1, 2] {
             for enemies in [1u8, 2, 3] {
@@ -1627,4 +1793,7 @@ mod tests {
         let ti = g.terr_at(sx, sy).unwrap();
         assert_eq!(s.outline.len(), g.terrs[ti].hexes.len());
     }
+
+
+
 }
