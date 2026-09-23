@@ -184,7 +184,8 @@ const EDGE_OF = {
 function hexPt(x0, y0, i, inset = 0.9) {
   const cx = x0 + 31, cy = y0 + 36;
   const [vx, vy] = HEX_PTS[i];
-  return [cx + (vx - cx) * inset, cy + (vy - cy) * inset];
+  const ax = x0 + vx, ay = y0 + vy;
+  return [cx + (ax - cx) * inset, cy + (ay - cy) * inset];
 }
 function edgeSeg(x0, y0, e) {
   const [ax, ay] = hexPt(x0, y0, e), [bx, by] = hexPt(x0, y0, (e + 1) % 6);
@@ -320,6 +321,10 @@ function render(s) {
     if (s.sel) {
       const p = at(s.sel[0], s.sel[1]);
       shape(hexPoly(p.left, p.top), 'rl-sel');
+    }
+    {
+      const p = at(cursor.x, cursor.y);
+      shape(hexPoly(p.left, p.top), 'rl-cursor');
     }
     let foe = '';
     for (const key of tset) {
