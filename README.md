@@ -3,7 +3,9 @@
 A faithful remake of Sean O'Connor's 1995 turn-based classic **Slay**: buy peasants,
 combine them into barons, and bankrupt your enemies by cutting their empires in half.
 
-![icon](src-tauri/icons/icon.png)
+| Default waters | Osaka Jade (one of 22 Omarchy themes) |
+|---|---|
+| ![Slay on the default Atoll theme](docs/shot-isle.png) | ![Slay on the Osaka Jade theme](docs/shot-osaka.png) |
 
 ## Play
 
