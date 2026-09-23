@@ -330,7 +330,7 @@ const tutSeen = {};
 let mpCfg = { humans: 2, foes: 0, size: 0, diff: 'normal' };
 
 function showOnly(id) {
-  ['menu-overlay', 'start-overlay', 'mp-overlay', 'creator-overlay',
+  ['menu-overlay', 'start-overlay', 'mp-overlay', 'creator-overlay', 'custom-overlay',
    'end-overlay', 'help-overlay'].forEach((x) => $(x).classList.add('hidden'));
   if (id) $(id).classList.remove('hidden');
 }
@@ -514,17 +514,64 @@ function renderMapList() {
     $('map-list').appendChild(row);
   });
 }
+function creatorView(which) {
+  const paint = which !== 'lib';
+  $('creator-paint-view').classList.toggle('hidden', !paint);
+  $('creator-lib-view').classList.toggle('hidden', paint);
+  if (paint) renderEditor();
+  else renderMapList();
+}
+
+// custom island picked from the library for an upcoming game
+let pickerFor = 'single';
+const pendingCustom = { single: null, mp: null };
+function customPayload(m) {
+  const slots = [...new Set(m.starts.map((s) => s.slot))].sort();
+  return {
+    cols: m.cols, rows: m.rows,
+    land: m.land,
+    starts: slots.map((sl) => m.starts.find((s) => s.slot === sl).at),
+  };
+}
 function playCustom(m) {
   const slots = [...new Set(m.starts.map((s) => s.slot))].sort();
   startGame({
     mode: 'custom', seed: null, enemies: slots.length - 1, difficulty: 'normal',
     size: 0, humans: [0], tutorial: false,
-    custom: {
-      cols: m.cols, rows: m.rows,
-      land: m.land,
-      starts: slots.map((sl) => m.starts.find((s) => s.slot === sl).at),
-    },
+    custom: customPayload(m),
   });
+}
+function openPicker(which) {
+  pickerFor = which;
+  const maps = getMaps();
+  $('custom-list').innerHTML = maps.length ? '' : '<p class="tiny">No painted islands yet — make one in the level creator.</p>';
+  maps.forEach((m) => {
+    const slots = [...new Set(m.starts.map((s) => s.slot))].sort();
+    const row = document.createElement('div');
+    row.className = 'maprow';
+    row.innerHTML = `<span class="nm">${m.name} · ${m.cols}×${m.rows} · ${slots.length}P</span>`;
+    const use = document.createElement('button');
+    use.className = 'play';
+    use.textContent = 'Use';
+    use.addEventListener('click', () => {
+      pendingCustom[which] = m;
+      refreshCustomLabels();
+      showOnly(which === 'mp' ? 'mp-overlay' : 'start-overlay');
+    });
+    row.appendChild(use);
+    $('custom-list').appendChild(row);
+  });
+  showOnly('custom-overlay');
+}
+function refreshCustomLabels() {
+  const s = pendingCustom.single;
+  $('single-custom').textContent = s ? `🖌 ${s.name} × (click to clear)` : '';
+  $('single-custom').onclick = s ? () => { pendingCustom.single = null; refreshCustomLabels(); } : null;
+  $('single-custom').style.cursor = s ? 'pointer' : 'default';
+  const m = pendingCustom.mp;
+  $('mp-custom').textContent = m ? `🖌 ${m.name} × (click to clear)` : '';
+  $('mp-custom').onclick = m ? () => { pendingCustom.mp = null; refreshCustomLabels(); } : null;
+  $('mp-custom').style.cursor = m ? 'pointer' : 'default';
 }
 
 let OM = {};
@@ -637,32 +684,44 @@ async function boot() {
   $('btn-start').addEventListener('click', async () => {
     const raw = $('seed-input').value.trim();
     const seed = raw === '' ? null : parseInt(raw, 10);
+    const custom = pendingCustom.single ? customPayload(pendingCustom.single) : null;
     startGame({
-      mode: 'single', seed: Number.isFinite(seed) ? seed : null,
+      mode: custom ? 'custom' : 'single',
+      seed: custom ? null : (Number.isFinite(seed) ? seed : null),
       enemies: opts.foes, difficulty: opts.diff, size: opts.size,
-      humans: [0], tutorial: false, custom: null,
+      humans: [0], tutorial: false, custom,
     });
   });
   $('btn-start-back').addEventListener('click', showMenu);
-  $('btn-menu-single').addEventListener('click', () => showOnly('start-overlay'));
-  $('btn-menu-multi').addEventListener('click', () => { segChanged(); showOnly('mp-overlay'); });
+  $('btn-menu-single').addEventListener('click', () => { refreshCustomLabels(); showOnly('start-overlay'); });
+  $('btn-menu-multi').addEventListener('click', () => { segChanged(); refreshCustomLabels(); showOnly('mp-overlay'); });
   $('btn-menu-tutorial').addEventListener('click', () => startGame({
     mode: 'tutorial', seed: 424242, enemies: 1, difficulty: 'easy',
     size: 0, humans: [0], tutorial: true, custom: null,
   }));
   $('btn-menu-creator').addEventListener('click', () => {
-    renderEditor();
-    renderMapList();
+    creatorView('paint');
     showOnly('creator-overlay');
   });
   $('btn-mp-back').addEventListener('click', showMenu);
   $('btn-mp-start').addEventListener('click', () => {
     const h = mpCfg.humans;
     const f = Math.min(mpCfg.foes, 4 - h);
+    const custom = pendingCustom.mp ? customPayload(pendingCustom.mp) : null;
+    const raw = ($('mp-seed-input').value || '').trim();
+    const seed = raw === '' ? null : parseInt(raw, 10);
+    if (custom) {
+      const slots = [...new Set(pendingCustom.mp.starts.map((s) => s.slot))].sort();
+      if (h > slots.length) {
+        $('mp-hint').textContent = `That isle seats ${slots.length} — lower Humans first.`;
+        return;
+      }
+    }
     startGame({
-      mode: h > 1 ? 'hotseat' : 'single', seed: null,
+      mode: custom ? 'custom' : (h > 1 ? 'hotseat' : 'single'),
+      seed: custom ? null : (Number.isFinite(seed) ? seed : null),
       enemies: h + f - 1, difficulty: mpCfg.diff, size: mpCfg.size,
-      humans: [...Array(h).keys()], tutorial: false, custom: null,
+      humans: [...Array(h).keys()], tutorial: false, custom,
     });
   });
   $('btn-coach-skip').addEventListener('click', () => { tutOff = true; $('coach-bar').classList.add('hidden'); });
@@ -709,6 +768,22 @@ async function boot() {
     });
   });
   $('btn-edit-back').addEventListener('click', showMenu);
+  $('btn-view-paint').addEventListener('click', () => creatorView('paint'));
+  $('btn-view-lib').addEventListener('click', () => creatorView('lib'));
+  // custom-map picker shared by single + multiplayer setups
+  $('seed-custom').addEventListener('click', () => openPicker('single'));
+  $('mp-seed-custom').addEventListener('click', () => openPicker('mp'));
+  $('mp-seed-dice').addEventListener('click', () => {
+    $('mp-seed-input').value = Math.floor(Math.random() * 90000 + 10000);
+  });
+  $('btn-custom-random').addEventListener('click', () => {
+    pendingCustom[pickerFor] = null;
+    refreshCustomLabels();
+    showOnly(pickerFor === 'mp' ? 'mp-overlay' : 'start-overlay');
+  });
+  $('btn-custom-back').addEventListener('click', () => {
+    showOnly(pickerFor === 'mp' ? 'mp-overlay' : 'start-overlay');
+  });
   $('btn-same').addEventListener('click', () => cmd('rematch', { same: true }));
   $('btn-new').addEventListener('click', showMenu);
   $('btn-close-help').addEventListener('click', () => $('help-overlay').classList.add('hidden'));

@@ -126,13 +126,15 @@
 
 <div class="overlay" id="menu-overlay">
   <div class="card">
-    <h1 class="display"><span class="mark">◈</span> Slay</h1>
-    <p class="sub">hex strategy · buy peasants, combine them into barons, starve your foes</p>
+    <h1 class="display bigtitle"><span class="mark">◈</span> Slay</h1>
+    <p class="sub">a recreation of Sean O'Connor's game <b>Slay</b> (1995)</p>
     <div class="menubtns">
       <button class="btn big" id="btn-menu-single">⚔ Single player</button>
       <button class="btn big" id="btn-menu-multi">👥 Multiplayer (pass &amp; play)</button>
-      <button class="btn big" id="btn-menu-tutorial">🎓 Tutorial</button>
-      <button class="btn big" id="btn-menu-creator">🖌 Level creator</button>
+      <div class="menubtns-row">
+        <button class="btn" id="btn-menu-tutorial">🎓 Tutorial</button>
+        <button class="btn" id="btn-menu-creator">🖌 Level creator</button>
+      </div>
     </div>
     <p class="tiny" id="menu-best"></p>
   </div>
@@ -154,7 +156,9 @@
     <div class="optrow"><span>Seed</span><div class="seedrow">
       <input id="seed-input" placeholder="random" inputmode="numeric">
       <button id="seed-dice" title="Random seed">⚄</button>
+      <button id="seed-custom" title="Play a painted island">🖌</button>
     </div></div>
+    <p class="tiny" id="single-custom"></p>
     <button class="btn big" id="btn-start">Invade →</button>
     <button class="btn ghost" id="btn-start-back">← Menu</button>
     <p class="tiny">wages ♟2 ♝6 ♞18 ♚54 · earn 1 per clear hex · cut foes in half</p>
@@ -177,6 +181,12 @@
     <div class="optrow"><span>Difficulty</span><div class="seg" id="seg-mpdiff">
       <button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button>
     </div></div>
+    <div class="optrow"><span>Seed</span><div class="seedrow">
+      <input id="mp-seed-input" placeholder="random" inputmode="numeric">
+      <button id="mp-seed-dice" title="Random seed">⚄</button>
+      <button id="mp-seed-custom" title="Play a painted island">🖌</button>
+    </div></div>
+    <p class="tiny" id="mp-custom"></p>
     <p class="tiny" id="mp-hint">2 humans · 0 AI</p>
     <button class="btn big" id="btn-mp-start">Begin →</button>
     <button class="btn ghost" id="btn-mp-back">← Menu</button>
@@ -188,24 +198,44 @@
   <div class="card wide editcard">
     <h1 class="display"><span class="mark">◈</span> Island painter</h1>
     <p class="sub">paint land, drop 2–4 starts, play it</p>
-    <div class="editbar">
-      <div class="seg" id="seg-tool">
-        <button data-v="land" class="on">Land</button><button data-v="water">Water</button><button data-v="start">Start</button>
+    <div id="creator-paint-view">
+      <div class="editbar">
+        <div class="seg" id="seg-tool">
+          <button data-v="land" class="on">Land</button><button data-v="water">Water</button><button data-v="start">Start</button>
+        </div>
+        <div class="seg" id="seg-editsize">
+          <button data-v="0" class="on">Classic</button><button data-v="1">Large</button><button data-v="2">Huge</button>
+        </div>
+        <input id="map-name" placeholder="isle name" maxlength="24">
       </div>
-      <div class="seg" id="seg-editsize">
-        <button data-v="0" class="on">Classic</button><button data-v="1">Large</button><button data-v="2">Huge</button>
+      <div class="editwrap"><div class="hexfield small" id="editfield"></div></div>
+      <p class="tiny" id="edit-status">0 land · 0 starts</p>
+      <div class="btnrow">
+        <button class="btn" id="btn-edit-clear">Clear</button>
+        <button class="btn" id="btn-edit-save">Save</button>
+        <button class="btn big" id="btn-edit-play">Play →</button>
       </div>
-      <input id="map-name" placeholder="isle name" maxlength="24">
     </div>
-    <div class="editwrap"><div class="hexfield small" id="editfield"></div></div>
-    <p class="tiny" id="edit-status">0 land · 0 starts</p>
-    <div class="btnrow">
-      <button class="btn" id="btn-edit-clear">Clear</button>
-      <button class="btn" id="btn-edit-save">Save</button>
-      <button class="btn big" id="btn-edit-play">Play →</button>
+    <div id="creator-lib-view" class="hidden">
+      <div id="map-list" class="liblist"></div>
+    </div>
+    <div class="btnrow navrow">
+      <button class="btn" id="btn-view-paint">🖌 Paint</button>
+      <button class="btn" id="btn-view-lib">📚 Library</button>
       <button class="btn" id="btn-edit-back">Menu</button>
     </div>
-    <div id="map-list"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="custom-overlay">
+  <div class="card">
+    <h1 class="display"><span class="mark">◈</span> Painted isles</h1>
+    <p class="sub">pick one for this game — random otherwise</p>
+    <div id="custom-list" class="liblist"></div>
+    <div class="btnrow">
+      <button class="btn big" id="btn-custom-random">🎲 Random instead</button>
+      <button class="btn" id="btn-custom-back">Back</button>
+    </div>
   </div>
 </div>
 
