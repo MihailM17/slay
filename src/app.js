@@ -789,6 +789,7 @@ async function boot() {
   $('btn-close-help').addEventListener('click', () => $('help-overlay').classList.add('hidden'));
   $('row-peasant').addEventListener('click', () => cmd('buy', { kind: 'man' }));
   $('row-castle').addEventListener('click', () => cmd('buy', { kind: 'castle' }));
+  $('btn-end-turn').addEventListener('click', () => cmd('end_turn'));
 
   // themes: Atoll house default + every real Omarchy palette in a dropdown
   let presets = ['atoll'];
