@@ -120,6 +120,7 @@ const ring = (color, cls = '') =>
 
   const tset = new Set(s.targets.map(([x, y]) => x + ',' + y));
   const outline = new Set((s.outline || []).map(([x, y]) => x + ',' + y));
+  const guard = new Set((s.guard || []).map(([x, y]) => x + ',' + y));
   for (const h of s.hexes) {
     const d = document.createElement('div');
     d.className = 'hex';
@@ -171,7 +172,13 @@ const ring = (color, cls = '') =>
       }
     }
     if (outline.has(h.x + ',' + h.y)) {
-      d.innerHTML += ring(RING_COLOR[h.owner] || '#ffffff', 'breathe');
+      // guard zone (what this house/castle/man protects) outranks the
+      // plain territory outline with its own shield-blue ring
+      if (guard.has(h.x + ',' + h.y)) {
+        d.innerHTML += ring('#6fb7ff', 'guard');
+      } else {
+        d.innerHTML += ring(RING_COLOR[h.owner] || '#ffffff', 'breathe');
+      }
     }
     // nothing picked up: every man you *can* pick hops, Slay-style
     if (!s.sel && h.owner === s.current && h.unit && !h.acted) d.classList.add('pickable');
@@ -183,13 +190,13 @@ const ring = (color, cls = '') =>
     field.appendChild(d);
   }
 
-  // standings (humans tagged P1.. in hotseat games)
+  // standings (humans tagged P1.. in hotseat games, current seat pulses)
   const order = [...s.players].sort((a, b) => b.hexes - a.hexes);
   const multi = (s.humans || [0]).length > 1;
   $('standings').innerHTML = order.map((p) => {
     const tag = multi && (s.humans || []).includes(p.owner)
       ? ` P${s.humans.indexOf(p.owner) + 1}` : '';
-    return `<tr class="${p.owner === s.current ? 'me' : ''} ${p.alive ? '' : 'dead'}">` +
+    return `<tr class="${p.owner === s.current ? 'me turn' : ''} ${p.alive ? '' : 'dead'}">` +
     `<td><span class="dot" style="background:${OWNER_DOT[p.owner]}"></span>` +
     `<span class="name">${p.name}${tag}</span></td>` +
     `<td class="num">${p.hexes} hex</td>` +
@@ -198,7 +205,9 @@ const ring = (color, cls = '') =>
 
   // treasury: focused own territory, else totals
   const t = s.focus_terr || s.totals;
-  $('treasury-sub').textContent = s.focus_terr ? `${s.focus_terr.hexes} hex · ${s.focus_terr.savings}g` : 'all lands';
+  $('treasury-sub').textContent = guard.size
+    ? `⌂ guards ${guard.size} hex${guard.size === 1 ? '' : 'es'}`
+    : s.focus_terr ? `${s.focus_terr.hexes} hex · ${s.focus_terr.savings}g` : 'all lands';
   const net = t.income - t.wages;
   setStat('st-income', '+' + t.income, t.income > 0);
   setStat('st-wages', '' + t.wages, false);
@@ -260,7 +269,6 @@ const ring = (color, cls = '') =>
     $('end-overlay').classList.add('hidden');
   }
 
-  maybePass(s);
   updateCoach(s);
 }
 
@@ -280,13 +288,6 @@ document.addEventListener('keydown', async (e) => {
   if (!$('menu-overlay').classList.contains('hidden')) return;
   if (!$('mp-overlay').classList.contains('hidden')) return;
   if (!$('creator-overlay').classList.contains('hidden')) return;
-  if (!$('pass-overlay').classList.contains('hidden')) {
-    if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
-      e.preventDefault();
-      $('pass-overlay').classList.add('hidden');
-    }
-    return;
-  }
   if (e.key === 'ArrowUp') cursor.y = Math.max(0, cursor.y - 1);
   else if (e.key === 'ArrowDown') cursor.y = Math.min(99, cursor.y + 1);
   else if (e.key === 'ArrowLeft') cursor.x = Math.max(0, cursor.x - 1);
@@ -310,25 +311,27 @@ document.addEventListener('keydown', async (e) => {
 
 function segWire(id, key, obj) {
   const target = obj || opts;
+  // NOTE: string-valued segs (diff, tool) must keep the raw string —
+  // +'land' is NaN, which silently broke the creator tools once already
+  const numeric = new Set(['foes', 'size', 'humans', 'edsize']);
   $(id).querySelectorAll('button').forEach((b) => {
     b.addEventListener('click', () => {
       $(id).querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
-      target[key] = (key === 'diff') ? b.dataset.v : +b.dataset.v;
+      target[key] = numeric.has(key) ? +b.dataset.v : b.dataset.v;
       if (typeof segChanged === 'function') segChanged(id);
     });
   });
 }
 
 let launchCfg = null;
-let lastHuman = null;
 let tutIdx = 0, tutOff = false;
 const tutSeen = {};
 let mpCfg = { humans: 2, foes: 0, size: 0, diff: 'normal' };
 
 function showOnly(id) {
   ['menu-overlay', 'start-overlay', 'mp-overlay', 'creator-overlay',
-   'end-overlay', 'help-overlay', 'pass-overlay'].forEach((x) => $(x).classList.add('hidden'));
+   'end-overlay', 'help-overlay'].forEach((x) => $(x).classList.add('hidden'));
   if (id) $(id).classList.remove('hidden');
 }
 
@@ -345,7 +348,6 @@ function showMenu() {
 
 async function startGame(cfg) {
   launchCfg = cfg;
-  lastHuman = null;
   tutOff = false;
   for (const k in tutSeen) delete tutSeen[k];
   showOnly(null);
@@ -371,16 +373,7 @@ function humanLabel(o) {
   return 'Player ' + (hs.indexOf(o) + 1);
 }
 
-function maybePass(s) {
-  const multi = (s.humans || [0]).length > 1;
-  if (multi && (s.winner === null || s.winner === undefined) && s.current !== lastHuman) {
-    lastHuman = s.current;
-    $('pass-who').textContent = humanLabel(s.current) + "'s move";
-    $('pass-overlay').classList.remove('hidden');
-  }
-}
-
-// ---- tutorial coach ----
+// ---- tutorial coach (monotonic: lessons never un-complete) ----
 const TUTS = [
   { t: 'Buy a peasant: click your glowing ⌂ house, then X (or tap Recruit → Peasant).',
     done: (s) => s.hexes.some((h) => h.owner === s.current && h.unit) },
@@ -388,7 +381,13 @@ const TUTS = [
     done: (s) => tutSeen.sel || !!s.sel },
   { t: 'Order him onto a glowing wild hex to claim it.',
     done: (s) => s.hexes.filter((h) => h.owner === s.current).length >= 2 },
-  { t: 'End the turn with Space — watch the treasury pay out.',
+  { t: 'Trees earn nothing. Claim that pine, then order a man onto it to chop.',
+    done: (s) => {
+      if (!s.tut_pine) return true;
+      const h = s.hexes.find((q) => q.x === s.tut_pine[0] && q.y === s.tut_pine[1]);
+      return !h || h.tree !== 'pine';
+    } },
+  { t: 'End the turn with Space — every territory earns, then pays wages (♟2 ♝6 ♞18 ♚54). Starve and everyone dies.',
     done: (s) => s.round >= 2 },
   { t: 'Buy a second peasant and stack him onto the first: hello, Spearman.',
     done: (s) => s.hexes.some((h) => h.owner === s.current && h.unit >= 2) },
@@ -399,18 +398,18 @@ function updateCoach(s) {
     (s.winner === null || s.winner === undefined);
   if (!active) { bar.classList.add('hidden'); return; }
   if (s.sel) tutSeen.sel = true;
-  const i = TUTS.findIndex((t) => !t.done(s));
+  while (tutIdx < TUTS.length && TUTS[tutIdx].done(s)) tutIdx++;
   bar.classList.remove('hidden');
   $('btn-coach-play').classList.add('hidden');
-  if (i === -1) {
+  if (tutIdx >= TUTS.length) {
     $('coach-dots').textContent = '●'.repeat(TUTS.length);
     $('coach-text').textContent = 'Graduated! Expand, combine, and cut foes in half.';
     const b = $('btn-coach-play');
     b.textContent = 'Play for real →';
     b.classList.remove('hidden');
   } else {
-    $('coach-dots').textContent = '●'.repeat(i) + '○'.repeat(TUTS.length - i);
-    $('coach-text').textContent = `Lesson ${i + 1}/${TUTS.length} — ${TUTS[i].t}`;
+    $('coach-dots').textContent = '●'.repeat(tutIdx) + '○'.repeat(TUTS.length - tutIdx);
+    $('coach-text').textContent = `Lesson ${tutIdx + 1}/${TUTS.length} — ${TUTS[tutIdx].t}`;
   }
 }
 
@@ -666,7 +665,6 @@ async function boot() {
       humans: [...Array(h).keys()], tutorial: false, custom: null,
     });
   });
-  $('btn-pass-begin').addEventListener('click', () => $('pass-overlay').classList.add('hidden'));
   $('btn-coach-skip').addEventListener('click', () => { tutOff = true; $('coach-bar').classList.add('hidden'); });
   $('btn-coach-play').addEventListener('click', showMenu);
   // creator toolbar

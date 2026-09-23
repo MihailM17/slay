@@ -78,6 +78,7 @@ pub struct Game {
     pub humans: Vec<i8>,
     pub tutorial: bool,
     pub custom: Option<CustomSpec>,
+    pub tut_pine: Option<(i32, i32)>,
     rng: StdRng,
 }
 
@@ -172,6 +173,7 @@ impl Game {
             humans,
             tutorial,
             custom: custom.clone(),
+            tut_pine: None,
             rng: StdRng::seed_from_u64(seed ^ 0x9e3779b97f4a7c15),
         };
         if custom_ok {
@@ -203,12 +205,20 @@ impl Game {
             t.savings = START_GOLD;
         }
         if tutorial {
-            // tutorial grant: your home treasury starts funded
+            // tutorial grant: your home treasury starts funded, and a pine
+            // grows next door so the chop lesson always has a subject
             if let Some(s0) = g.starts.first().cloned() {
                 if let Some(ti) = g.terr_at(s0.0, s0.1) {
                     if g.terrs[ti].owner == 0 {
                         g.terrs[ti].savings = 25;
                     }
+                }
+                if let Some((nx, ny)) = g.neighbours(s0.0, s0.1).into_iter().find(|&(nx, ny)| {
+                    let h = &g.grid[Game::idx(g.cols, nx, ny)];
+                    h.owner == -1 && !h.water && h.tree.is_none()
+                }) {
+                    g.grid[Game::idx(g.cols, nx, ny)].tree = Some(Tree::Pine);
+                    g.tut_pine = Some((nx, ny));
                 }
             }
         }
@@ -1157,9 +1167,11 @@ pub struct UiState {
     pub sel: Option<(i32, i32)>,
     pub targets: Vec<(i32, i32)>,
     pub outline: Vec<(i32, i32)>,
+    pub guard: Vec<(i32, i32)>,
     pub focus: Option<(i32, i32)>,
     pub focus_terr: Option<UiTerr>,
     pub totals: UiTerr,
+    pub tut_pine: Option<(i32, i32)>,
     pub log: Vec<String>,
     pub msg: String,
     pub sfx: String,
@@ -1274,6 +1286,30 @@ impl Game {
             .and_then(|(x, y)| self.terr_at(x, y))
             .map(|ti| self.terrs[ti].hexes.iter().cloned().collect())
             .unwrap_or_default();
+        // guard zone of the focused defender: its own hex plus every
+        // same-territory neighbour it protects (units, castles, houses)
+        let guard: Vec<(i32, i32)> = match self.focus {
+            Some((fx, fy)) => {
+                let hi = Self::idx(self.cols, fx, fy);
+                let is_cap = self.terr_at(fx, fy)
+                    .map(|ti| self.terrs[ti].capital == Some((fx, fy)))
+                    .unwrap_or(false);
+                if self.grid[hi].unit != 0 || self.grid[hi].castle || is_cap {
+                    let mut z = vec![(fx, fy)];
+                    if let Some(ti) = self.terr_at(fx, fy) {
+                        for q in self.neighbours(fx, fy) {
+                            if self.terrs[ti].hexes.contains(&q) {
+                                z.push(q);
+                            }
+                        }
+                    }
+                    z
+                } else {
+                    vec![]
+                }
+            }
+            None => vec![],
+        };
         UiState {
             round: self.round,
             current: self.current,
@@ -1287,9 +1323,11 @@ impl Game {
             sel: self.sel,
             targets: self.sel_targets(),
             outline,
+            guard,
             focus: self.focus,
             focus_terr,
             totals: self.totals(),
+            tut_pine: self.tut_pine,
             log: self.log.clone(),
             msg,
             sfx,
