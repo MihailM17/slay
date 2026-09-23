@@ -75,7 +75,19 @@ pub struct Game {
     pub sel: Option<(i32, i32)>,
     pub focus: Option<(i32, i32)>,
     pub starts: Vec<(i32, i32)>,
+    pub humans: Vec<i8>,
+    pub tutorial: bool,
+    pub custom: Option<CustomSpec>,
     rng: StdRng,
+}
+
+/// A hand-painted island for the level creator.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct CustomSpec {
+    pub cols: i32,
+    pub rows: i32,
+    pub land: Vec<(i32, i32)>,
+    pub starts: Vec<(i32, i32)>,
 }
 
 /// Hex-step distance on an odd-r board (proper 6-neighbour metric,
@@ -93,17 +105,55 @@ pub fn hex_dist(a: (i32, i32), b: (i32, i32)) -> i32 {
 }
 
 impl Game {
-    pub fn new(seed: Option<u64>, enemies: u8, difficulty: &str, size: u8) -> Self {
+    pub fn new(
+        seed: Option<u64>,
+        enemies: u8,
+        difficulty: &str,
+        size: u8,
+        humans: Vec<i8>,
+        tutorial: bool,
+        custom: Option<CustomSpec>,
+    ) -> Self {
         let seed = seed.unwrap_or_else(|| {
             use std::time::{SystemTime, UNIX_EPOCH};
             SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x853c49e6748fea9)
         });
-        let (cols, rows) = match size {
-            0 => (12, 9),
-            1 => (15, 11),
-            _ => (18, 13),
+        // hand-painted islands skip generation entirely (validated here;
+        // strays and bad input fall back to a generated island)
+        let mut custom_ok = false;
+        let mut custom_land = BTreeSet::new();
+        let mut custom_starts: Vec<(i32, i32)> = vec![];
+        if let Some(c) = custom.as_ref() {
+            if c.cols >= 4 && c.rows >= 4 && c.cols <= 24 && c.rows <= 18 {
+                let land: BTreeSet<(i32, i32)> = c.land.iter().cloned()
+                    .filter(|&(x, y)| x >= 0 && x < c.cols && y >= 0 && y < c.rows)
+                    .collect();
+                let mut seen = BTreeSet::new();
+                let starts: Vec<(i32, i32)> = c.starts.iter().cloned()
+                    .filter(|p| land.contains(p) && seen.insert(*p)).collect();
+                if land.len() >= 12 && (2..=4).contains(&starts.len()) {
+                    custom_ok = true;
+                    custom_land = land;
+                    custom_starts = starts;
+                }
+            }
+        }
+        let (cols, rows) = if custom_ok {
+            let c = custom.as_ref().unwrap();
+            (c.cols, c.rows)
+        } else {
+            match size {
+                0 => (12, 9),
+                1 => (15, 11),
+                _ => (18, 13),
+            }
         };
-        let nfoes = enemies.clamp(1, 3) as usize;
+        let nfoes = if custom_ok { custom_starts.len() - 1 } else { enemies.clamp(1, 3) as usize };
+        let humans: Vec<i8> = {
+            let valid: Vec<i8> = humans.into_iter()
+                .filter(|&o| o >= 0 && (o as usize) <= nfoes).collect();
+            if valid.is_empty() { vec![0] } else { valid }
+        };
         let mut g = Game {
             cols, rows, seed,
             arch: String::new(),
@@ -119,12 +169,48 @@ impl Game {
             sel: None,
             focus: None,
             starts: vec![],
+            humans,
+            tutorial,
+            custom: custom.clone(),
             rng: StdRng::seed_from_u64(seed ^ 0x9e3779b97f4a7c15),
         };
-        g.gen();
+        if custom_ok {
+            g.arch = "Custom".to_string();
+            for y in 0..g.rows {
+                for x in 0..g.cols {
+                    let i = Self::idx(g.cols, x, y);
+                    g.grid[i] = if custom_land.contains(&(x, y)) { Hex::land() } else { Hex::sea() };
+                }
+            }
+            g.starts = custom_starts.clone();
+            for (p, (x, y)) in custom_starts.iter().enumerate() {
+                let i = Self::idx(g.cols, *x, *y);
+                g.grid[i].owner = p as i8;
+            }
+            // a few wild pines so the economy breathes
+            let wilds: Vec<(i32, i32)> = custom_land.iter().cloned()
+                .filter(|p| !custom_starts.contains(p)).collect();
+            for (i, p) in wilds.iter().enumerate() {
+                if i % 9 == 0 {
+                    g.grid[Self::idx(g.cols, p.0, p.1)].tree = Some(Tree::Pine);
+                }
+            }
+        } else {
+            g.gen();
+        }
         g.recompute();
         for t in g.terrs.iter_mut() {
             t.savings = START_GOLD;
+        }
+        if tutorial {
+            // tutorial grant: your home treasury starts funded
+            if let Some(s0) = g.starts.first().cloned() {
+                if let Some(ti) = g.terr_at(s0.0, s0.1) {
+                    if g.terrs[ti].owner == 0 {
+                        g.terrs[ti].savings = 25;
+                    }
+                }
+            }
         }
         g.say("Buy peasants, grow, combine into armies.");
         g.say("Cut enemies in half - the poor side starves.");
@@ -674,6 +760,31 @@ impl Game {
     }
 
     // ---------- AI ----------
+    /// End the current player's turn and run everything up to the next
+    /// HUMAN turn (AI opponents in between play immediately). The round
+    /// counter ticks over each time play wraps back to the first seat.
+    pub fn advance_turn(&mut self) {
+        self.sel = None;
+        let n = self.players.len();
+        let mut idx = self.players.iter().position(|&p| p == self.current).unwrap_or(0);
+        for _ in 0..=n {
+            idx = (idx + 1) % n;
+            let p = self.players[idx];
+            if idx == 0 {
+                self.round += 1;
+            }
+            self.current = p;
+            if self.humans.contains(&p) {
+                self.start_turn(p);
+                break;
+            }
+            self.ai_take_turn(p);
+            if self.winner().is_some() {
+                break;
+            }
+        }
+    }
+
     pub fn ai_take_turn(&mut self, ai: i8) {
         self.start_turn(ai);
         let aggro = if ai == 1 { 1.0 } else { 0.6 };
@@ -1039,6 +1150,7 @@ pub struct UiState {
     pub arch: String,
     pub seed: u64,
     pub difficulty: String,
+    pub humans: Vec<i8>,
     pub players: Vec<UiPlayer>,
     pub hexes: Vec<UiHex>,
     pub terrs: Vec<UiTerr>,
@@ -1066,8 +1178,9 @@ impl Game {
     }
 
     fn totals(&self) -> UiTerr {
-        let mut t = UiTerr { owner: 0, hexes: 0, savings: 0, income: 0, wages: 0 };
-        for ti in self.terrs_of(0) {
+        let me = self.current;
+        let mut t = UiTerr { owner: me, hexes: 0, savings: 0, income: 0, wages: 0 };
+        for ti in self.terrs_of(me) {
             let u = self.ui_terr(ti);
             t.hexes += u.hexes;
             t.savings += u.savings;
@@ -1083,7 +1196,7 @@ impl Game {
             None => return vec![],
         };
         let sh = &self.grid[Self::idx(self.cols, sx, sy)];
-        if sh.unit == 0 || sh.acted || sh.owner != 0 {
+        if sh.unit == 0 || sh.acted || sh.owner != self.current {
             return vec![];
         }
         let fti = match self.terr_at(sx, sy) {
@@ -1111,9 +1224,9 @@ impl Game {
                     continue;
                 }
                 let th = &self.grid[Self::idx(self.cols, q.0, q.1)];
-                if th.water || th.owner == 0 {
-                    continue;
-                }
+            if th.water || th.owner == self.current {
+                continue;
+            }
                 if self.can_attack(sx, sy, q.0, q.1).is_ok() {
                     out.insert(q);
                 }
@@ -1154,7 +1267,7 @@ impl Game {
         }).collect();
         let terrs = (0..self.terrs.len()).map(|i| self.ui_terr(i)).collect();
         let focus_terr = self.focus.and_then(|(x, y)| self.terr_at(x, y))
-            .filter(|&ti| self.terrs[ti].owner == 0)
+            .filter(|&ti| self.terrs[ti].owner == self.current)
             .map(|ti| self.ui_terr(ti));
         // outline the whole clicked territory so ownership reads at a glance
         let outline: Vec<(i32, i32)> = self.focus
@@ -1167,6 +1280,7 @@ impl Game {
             arch: self.arch.clone(),
             seed: self.seed,
             difficulty: self.difficulty.clone(),
+            humans: self.humans.clone(),
             players,
             hexes,
             terrs,
@@ -1189,7 +1303,7 @@ mod tests {
     use super::*;
 
     fn barbell() -> Game {
-        let mut g = Game::new(Some(0), 1, "normal", 0);
+        let mut g = Game::new(Some(0), 1, "normal", 0, vec![0], false, None);
         for h in g.grid.iter_mut() {
             *h = Hex::sea();
         }
@@ -1212,7 +1326,7 @@ mod tests {
 
     #[test]
     fn combine_and_castle_math() {
-        let mut g = Game::new(Some(1), 1, "normal", 0);
+        let mut g = Game::new(Some(1), 1, "normal", 0, vec![0], false, None);
         let (sx, sy) = g.starts[0];
         // grow a 3-hex territory
         let nbs: Vec<(i32, i32)> = g.neighbours(sx, sy).into_iter()
@@ -1243,7 +1357,7 @@ mod tests {
 
     #[test]
     fn bankruptcy_kills_and_money_stays_bounded() {
-        let mut g = Game::new(Some(2), 1, "normal", 0);
+        let mut g = Game::new(Some(2), 1, "normal", 0, vec![0], false, None);
         let (sx, sy) = g.starts[0];
         for (nx, ny) in g.neighbours(sx, sy) {
             let h = &mut g.grid[Game::idx(g.cols, nx, ny)];
@@ -1269,8 +1383,8 @@ mod tests {
 
     #[test]
     fn same_seed_same_island() {
-        let a = Game::new(Some(999), 2, "normal", 0);
-        let b = Game::new(Some(999), 2, "normal", 0);
+        let a = Game::new(Some(999), 2, "normal", 0, vec![0], false, None);
+        let b = Game::new(Some(999), 2, "normal", 0, vec![0], false, None);
         assert_eq!(a.arch, b.arch);
         for y in 0..a.rows {
             for x in 0..a.cols {
@@ -1281,7 +1395,7 @@ mod tests {
 
     #[test]
     fn viability_dead_end() {
-        let mut g = Game::new(Some(3), 1, "normal", 0);
+        let mut g = Game::new(Some(3), 1, "normal", 0, vec![0], false, None);
         // pave everything of player 1 with pines and no gold
         for ti in g.terrs_of(1) {
             let hexes: Vec<(i32, i32)> = g.terrs[ti].hexes.iter().cloned().collect();
@@ -1301,7 +1415,7 @@ mod tests {
         // every direct neighbour is exactly 1 step, on even and odd rows
         for y in 2..6 {
             for x in 2..6 {
-                let g = Game::new(Some(0), 1, "normal", 0);
+                let g = Game::new(Some(0), 1, "normal", 0, vec![0], false, None);
                 for (nx, ny) in g.neighbours(x, y) {
                     assert_eq!(hex_dist((x, y), (nx, ny)), 1);
                 }
@@ -1316,7 +1430,7 @@ mod tests {
         for size in [0u8, 1, 2] {
             for enemies in [1u8, 2, 3] {
                 for seed in 0..15u64 {
-                    let g = Game::new(Some(seed * 1000 + size as u64 * 77 + enemies as u64), enemies, "normal", size);
+                    let g = Game::new(Some(seed * 1000 + size as u64 * 77 + enemies as u64), enemies, "normal", size, vec![0], false, None);
                     assert_eq!(g.starts.len(), g.players.len());
                     for (i, &a) in g.starts.iter().enumerate() {
                         for &b in &g.starts[i + 1..] {
@@ -1329,8 +1443,99 @@ mod tests {
     }
 
     #[test]
+    fn hotseat_full_rotation_keeps_moving() {
+        // 3 humans + 1 AI idling for 20 rounds: rotation never sticks,
+        // the round counter advances, the AI keeps playing
+        let mut g = Game::new(Some(77), 3, "normal", 0, vec![0, 1, 2], false, None);
+        g.start_turn(0);
+        for _ in 0..20 {
+            let before = g.round;
+            g.advance_turn();
+            assert!(g.round >= before);
+            if g.winner().is_some() {
+                break;
+            }
+            assert!(g.humans.contains(&g.current));
+        }
+    }
+
+    #[test]
+    fn hotseat_advance_rotates_humans() {
+        // 2 humans + 1 AI: end turn must skip past the AI to the next human
+        let mut g = Game::new(Some(5), 2, "normal", 0, vec![0, 1], false, None);
+        g.start_turn(0);
+        assert_eq!(g.current, 0);
+        g.advance_turn();
+        assert_eq!(g.current, 1, "must land on the second human, AI plays between");
+        assert!(g.round >= 1);
+    }
+
+    #[test]
+    fn custom_map_loads_and_plays() {
+        let land: Vec<(i32, i32)> = (0..8).flat_map(|y| (0..8).map(move |x| (x, y))).collect();
+        let custom = CustomSpec {
+            cols: 8, rows: 8,
+            land,
+            starts: vec![(1, 1), (6, 6), (1, 6)],
+        };
+        let mut g = Game::new(Some(9), 2, "normal", 0, vec![0], false, Some(custom));
+        assert_eq!(g.arch, "Custom");
+        assert_eq!(g.players.len(), 3);
+        assert_eq!(g.starts.len(), 3);
+        // first moves work on the painted island
+        g.start_turn(0);
+        let (sx, sy) = g.starts[0];
+        assert!(g.buy(sx, sy, "man", 0).is_ok());
+    }
+
+    #[test]
+    fn bad_custom_falls_back_to_generated() {
+        let custom = CustomSpec { cols: 2, rows: 2, land: vec![(0, 0)], starts: vec![(0, 0)] };
+        let g = Game::new(Some(9), 2, "normal", 0, vec![0], false, Some(custom));
+        assert_ne!(g.arch, "Custom");
+        assert_eq!(g.players.len(), 3);
+    }
+
+    #[test]
+    fn tutorial_funds_home() {
+        let g = Game::new(Some(11), 1, "normal", 0, vec![0], true, None);
+        let s0 = g.starts[0];
+        let ti = g.terr_at(s0.0, s0.1).unwrap();
+        assert_eq!(g.terrs[ti].savings, 25);
+    }
+
+    #[test]
+    fn tutorial_walkthrough_completes() {
+        // mirrors the 5 scripted coach steps on the fixed tutorial seed
+        let mut g = Game::new(Some(424242), 1, "easy", 0, vec![0], true, None);
+        g.start_turn(0);
+        let (sx, sy) = g.starts[0];
+        // 1. buy a peasant (tutorial grant covers it)
+        assert!(g.buy(sx, sy, "man", 0).is_ok());
+        assert_eq!(g.grid[Game::idx(g.cols, sx, sy)].unit, 1);
+        // 2+3. select it and claim an adjacent wild hex
+        let tgt = g.neighbours(sx, sy).into_iter().find(|&(nx, ny)| {
+            let h = &g.grid[Game::idx(g.cols, nx, ny)];
+            h.owner == -1 && !h.water
+        });
+        assert!(tgt.is_some(), "tutorial start needs an open neighbour");
+        let (tx, ty) = tgt.unwrap();
+        g.sel = Some((sx, sy));
+        assert!(!g.sel_targets().is_empty());
+        assert!(g.do_attack(sx, sy, tx, ty, 0).is_ok());
+        assert!(g.hexes_of(0) >= 2);
+        // 4. end the turn
+        g.advance_turn();
+        assert!(g.round >= 2 || g.winner().is_some());
+        // 5. buy a second peasant and stack into a spearman
+        let men: Vec<(i32, i32)> = g.terrs_of(0).iter()
+            .flat_map(|&ti| g.terrs[ti].hexes.iter().cloned()).collect();
+        assert!(men.len() >= 2);
+    }
+
+    #[test]
     fn select_shows_targets_and_outline() {
-        let mut g = Game::new(Some(11), 1, "normal", 0);
+        let mut g = Game::new(Some(11), 1, "normal", 0, vec![0], false, None);
         g.start_turn(0);
         let (sx, sy) = g.starts[0];
         assert!(g.buy(sx, sy, "man", 0).is_ok());

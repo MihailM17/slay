@@ -1,6 +1,6 @@
 mod game;
 
-use game::{Game, UiState};
+use game::{CustomSpec, Game, UiState};
 use std::sync::Mutex;
 use tauri::State;
 
@@ -13,9 +13,14 @@ fn new_game(
     enemies: u8,
     difficulty: String,
     size: u8,
+    humans: Vec<i8>,
+    tutorial: bool,
+    custom: Option<CustomSpec>,
 ) -> UiState {
-    let mut g = Game::new(seed, enemies, &difficulty, size);
-    g.start_turn(0);
+    let mut g = Game::new(seed, enemies, &difficulty, size, humans, tutorial, custom);
+    let first = g.players[0];
+    g.current = first;
+    g.start_turn(first);
     let s = g.snapshot("Expand! Click your hex, buy a peasant (X).".to_string(), String::new());
     *state.0.lock().unwrap() = g;
     s
@@ -28,16 +33,17 @@ fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
         return g.snapshot(String::new(), String::new());
     }
     g.focus = Some((x, y));
+    let me = g.current;
     let (owner, unit, acted) = {
         let h = &g.grid[Game::idx(g.cols, x, y)];
         (h.owner, h.unit, h.acted)
     };
     let (msg, sfx) = match g.sel {
         None => {
-            if owner == 0 && unit != 0 && !acted {
+            if owner == me && unit != 0 && !acted {
                 g.sel = Some((x, y));
                 (format!("{} selected — click a glowing hex.", game::rank_name(unit)), "select".to_string())
-            } else if owner == 0 && unit != 0 {
+            } else if owner == me && unit != 0 {
                 ("Spent — it already acted this turn.".to_string(), String::new())
             } else {
                 (String::new(), String::new())
@@ -52,7 +58,7 @@ fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
                 let own_target = g.terr_at(sx, sy)
                     .map(|ti| g.terrs[ti].hexes.contains(&(x, y)))
                     .unwrap_or(false);
-                if owner == 0 && own_target {
+                if owner == me && own_target {
                     match g.do_move(sx, sy, x, y) {
                         Ok(m) => {
                             let fx = if m.starts_with("Combined") {
@@ -69,7 +75,7 @@ fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
                         Err(e) => (e, "error".to_string()),
                     }
                 } else {
-                    match g.do_attack(sx, sy, x, y, 0) {
+                    match g.do_attack(sx, sy, x, y, me) {
                         Ok(m) => {
                             g.sel = None;
                             (m, "attack".to_string())
@@ -86,8 +92,9 @@ fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
 #[tauri::command]
 fn buy(state: State<AppState>, kind: String) -> UiState {
     let mut g = state.0.lock().unwrap();
+    let me = g.current;
     let msg = match g.focus {
-        Some((x, y)) => g.buy(x, y, &kind, 0).unwrap_or_else(|e| e),
+        Some((x, y)) => g.buy(x, y, &kind, me).unwrap_or_else(|e| e),
         None => "Click one of your open hexes first.".to_string(),
     };
     let sfx = if msg == "Peasant ready." {
@@ -112,36 +119,27 @@ fn cancel_sel(state: State<AppState>) -> UiState {
 #[tauri::command]
 fn end_turn(state: State<AppState>) -> UiState {
     let mut g = state.0.lock().unwrap();
-    g.sel = None;
-    let mut over = false;
-    let order: Vec<i8> = g.alive().into_iter().filter(|&o| o != 0).collect();
-    for ai in order {
-        g.current = ai;
-        g.ai_take_turn(ai);
-        if g.winner().is_some() {
-            over = true;
-            break;
-        }
-    }
+    g.advance_turn();
+    let over = g.winner().is_some();
     let (msg, sfx) = if over {
         (String::new(), String::new())
     } else {
-        g.round += 1;
-        g.start_turn(0);
-        (format!("Round {}. Treasuries paid out.", g.round), "turn".to_string())
+        (
+            format!("Round {}. Treasuries paid out.", g.round),
+            "turn".to_string(),
+        )
     };
-    g.current = 0;
     g.snapshot(msg, sfx)
 }
 
 #[tauri::command]
 fn rematch(state: State<AppState>, same: bool) -> UiState {
-    let (seed, enemies, difficulty, size) = {
+    let (seed, enemies, difficulty, size, humans, tutorial, custom) = {
         let g = state.0.lock().unwrap();
         let s = if same { Some(g.seed) } else { None };
-        (s, g.enemies, g.difficulty.clone(), g.size)
+        (s, g.enemies, g.difficulty.clone(), g.size, g.humans.clone(), g.tutorial, g.custom.clone())
     };
-    new_game(state, seed, enemies, difficulty, size)
+    new_game(state, seed, enemies, difficulty, size, humans, tutorial, custom)
 }
 
 /// Best-effort Omarchy theme detection: finds the active theme name under
@@ -199,7 +197,7 @@ fn omarchy_theme() -> Option<serde_json::Value> {
 
 fn main() {
     tauri::Builder::default()
-        .manage(AppState(Mutex::new(Game::new(None, 2, "normal", 0))))
+        .manage(AppState(Mutex::new(Game::new(None, 2, "normal", 0, vec![0], false, None))))
         .invoke_handler(tauri::generate_handler![
             new_game,
             click_hex,

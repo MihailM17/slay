@@ -104,6 +104,13 @@
     </details>
   </div>
 
+  <div class="coachbar hidden" id="coach-bar">
+    <span id="coach-dots"></span>
+    <span id="coach-text"></span>
+    <button class="btn small" id="btn-coach-skip">Skip</button>
+    <button class="btn small hidden" id="btn-coach-play">Play for real →</button>
+  </div>
+
   <div class="logbar" id="logbar">
     <svg viewBox="0 0 24 24"><path d="M12 2 2 8l10 6 10-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M6 11v6c0 1.7 2.7 3 6 3s6-1.3 6-3v-6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
     <span id="logtext">Welcome to the island.</span>
@@ -117,15 +124,29 @@
 
 </div>
 
-<div class="overlay" id="start-overlay">
+<div class="overlay" id="menu-overlay">
   <div class="card">
     <h1 class="display"><span class="mark">◈</span> Slay</h1>
     <p class="sub">hex strategy · buy peasants, combine them into barons, starve your foes</p>
     <div class="boot">
-      <div>SLAY/OS v0.1.0 — hexfield driver ............ <span class="ok">[OK]</span></div>
+      <div>SLAY/OS v0.2.0 — hexfield driver ............ <span class="ok">[OK]</span></div>
       <div>island generator (isle/atoll/lakes) ......... <span class="ok">[OK]</span></div>
       <div>karg &amp; vex combat routines ............... <span class="ok">[OK]</span></div>
     </div>
+    <div class="menubtns">
+      <button class="btn big" id="btn-menu-single">⚔ Single player</button>
+      <button class="btn big" id="btn-menu-multi">👥 Multiplayer (pass &amp; play)</button>
+      <button class="btn big" id="btn-menu-tutorial">🎓 Tutorial</button>
+      <button class="btn big" id="btn-menu-creator">🖌 Level creator</button>
+    </div>
+    <p class="tiny" id="menu-best"></p>
+  </div>
+</div>
+
+<div class="overlay hidden" id="start-overlay">
+  <div class="card">
+    <h1 class="display"><span class="mark">◈</span> Slay</h1>
+    <p class="sub">single player — how big a war?</p>
     <div class="optrow"><span>Foes</span><div class="seg" id="seg-foes">
       <button data-v="1">1</button><button data-v="2" class="on">2</button><button data-v="3">3</button>
     </div></div>
@@ -140,7 +161,63 @@
       <button id="seed-dice" title="Random seed">⚄</button>
     </div></div>
     <button class="btn big" id="btn-start">Invade →</button>
+    <button class="btn ghost" id="btn-start-back">← Menu</button>
     <p class="tiny">wages ♟2 ♝6 ♞18 ♚54 · earn 1 per clear hex · cut foes in half</p>
+  </div>
+</div>
+
+<div class="overlay hidden" id="mp-overlay">
+  <div class="card">
+    <h1 class="display"><span class="mark">◈</span> Pass &amp; play</h1>
+    <p class="sub">humans share one screen — AI fills the empty seats</p>
+    <div class="optrow"><span>Humans</span><div class="seg" id="seg-humans">
+      <button data-v="2" class="on">2</button><button data-v="3">3</button><button data-v="4">4</button>
+    </div></div>
+    <div class="optrow"><span>AI foes</span><div class="seg" id="seg-aifoes">
+      <button data-v="0" class="on">0</button><button data-v="1">1</button><button data-v="2">2</button>
+    </div></div>
+    <div class="optrow"><span>Island</span><div class="seg" id="seg-mpsize">
+      <button data-v="0" class="on">Classic</button><button data-v="1">Large</button><button data-v="2">Huge</button>
+    </div></div>
+    <div class="optrow"><span>Difficulty</span><div class="seg" id="seg-mpdiff">
+      <button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button>
+    </div></div>
+    <p class="tiny" id="mp-hint">2 humans · 0 AI</p>
+    <button class="btn big" id="btn-mp-start">Begin →</button>
+    <button class="btn ghost" id="btn-mp-back">← Menu</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pass-overlay">
+  <div class="card">
+    <h1 class="display"><span class="mark">◈</span> <span id="pass-who">Player 2</span></h1>
+    <p class="sub">pass the device — your move</p>
+    <button class="btn big" id="btn-pass-begin">Begin turn →</button>
+  </div>
+</div>
+
+<div class="overlay hidden fullscreen" id="creator-overlay">
+  <div class="card wide editcard">
+    <h1 class="display"><span class="mark">◈</span> Island painter</h1>
+    <p class="sub">paint land, drop 2–4 starts, play it</p>
+    <div class="editbar">
+      <div class="seg" id="seg-tool">
+        <button data-v="land" class="on">Land</button><button data-v="water">Water</button><button data-v="start">Start</button>
+      </div>
+      <div class="seg" id="seg-editsize">
+        <button data-v="0" class="on">Classic</button><button data-v="1">Large</button><button data-v="2">Huge</button>
+      </div>
+      <input id="map-name" placeholder="isle name" maxlength="24">
+    </div>
+    <div class="editwrap"><div class="hexfield small" id="editfield"></div></div>
+    <p class="tiny" id="edit-status">0 land · 0 starts</p>
+    <div class="btnrow">
+      <button class="btn" id="btn-edit-clear">Clear</button>
+      <button class="btn" id="btn-edit-save">Save</button>
+      <button class="btn big" id="btn-edit-play">Play →</button>
+      <button class="btn" id="btn-edit-back">Menu</button>
+    </div>
+    <div id="map-list"></div>
   </div>
 </div>
 
@@ -173,7 +250,12 @@
         <h3>Cutting</h3>
         <p>Split a foe in two and the half <b>without the house starts at 0 gold</b> and starves. Linking your lands merges treasuries. Gold houses (⌂) can buy; grey ones are broke.</p>
         <p>Trees spread every turn and pay nothing — keep chopping.</p>
-    </div>
+      </div>
+      <div>
+        <h3>Modes</h3>
+        <p><b>Single</b> vs the AI. <b>Multiplayer</b> passes one screen between 2–4 humans (AI fills empty seats). <b>Tutorial</b> teaches the first moves. <b>Level creator</b> paints custom islands with the Land/Water/Start tools — click a Start hex again to cycle P1→P4.</p>
+        <p><b>Space</b> ends turn · <b>Enter</b> picks/orders · <b>X/C</b> recruit · <b>M</b> sound.</p>
+      </div>
   </div>
 
     <button class="btn big" id="btn-close-help">Back to war</button>

@@ -206,6 +206,26 @@ html[data-theme="parchment"] .seedrow input{background:#e4dac4;}
 .btn{background:transparent; color:var(--ink); border:1px solid var(--panel-line); border-radius:2px; padding:9px 18px; font:inherit; font-size:13px; cursor:pointer; letter-spacing:1px;}
 .btn.big{background:var(--you-bg); color:var(--you); border-color:var(--you); font-weight:600; width:100%; margin-top:16px; padding:12px;}
 .btn:hover{filter:brightness(1.3);}
+.btn.ghost{width:100%; margin-top:8px; opacity:.75;}
+.btn.small{width:auto; margin:0; padding:5px 12px; font-size:12px;}
+.menubtns{display:flex; flex-direction:column; gap:10px; margin-top:6px;}
+.menubtns .btn.big{margin-top:0;}
+.coachbar{display:flex; align-items:center; gap:12px; margin-top:12px; padding:10px 14px; background:var(--you-bg); border:1px solid var(--panel-line); border-left:3px solid var(--gold); border-radius:var(--radius); font-size:13px;}
+.coachbar.hidden{display:none;}
+.coachbar #coach-dots{color:var(--gold); letter-spacing:2px; flex:none;}
+.coachbar #coach-text{flex:1;}
+.overlay.fullscreen .card{max-height:94dvh; overflow-y:auto;}
+.editcard{max-width:860px;}
+.editbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px;}
+.editbar input{background:#0a0e1a; color:var(--ink); border:1px solid var(--panel-line); border-radius:2px; padding:5px 10px; font:inherit; font-size:12px; width:140px;}
+.editwrap{overflow:auto; max-height:46dvh; border:1px solid var(--panel-line-soft); padding:10px;}
+.hexfield.small .hex{width:40px; height:47px; cursor:crosshair;}
+.hexfield.small .hex svg{width:15px; height:15px;}
+.maprow{display:flex; align-items:center; gap:10px; padding:6px 0; font-size:13px; border-top:1px solid var(--panel-line-soft);}
+.maprow .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.maprow button{background:transparent; color:var(--ink-dim); border:1px solid var(--panel-line); border-radius:2px; padding:3px 10px; font:inherit; font-size:11px; cursor:pointer;}
+.maprow button:hover{color:var(--ink); border-color:var(--ink-dim);}
+.maprow button.play{color:var(--you); border-color:var(--you);}
 .btnrow{display:flex; gap:10px; margin-top:18px;}
 .btnrow .btn{flex:1;}
 .tiny{font-size:11px; color:var(--ink-faint); margin:14px 0 0;}

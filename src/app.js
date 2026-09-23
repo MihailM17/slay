@@ -98,7 +98,9 @@ function render(s) {
   $('chip-arch').textContent = s.arch;
   $('chip-diff').textContent = s.difficulty[0].toUpperCase() + s.difficulty.slice(1);
   $('mapname').textContent = 'The ' + s.arch;
-  $('turnhint').textContent = s.current === 0 ? 'your move' : OWNER_NAME[s.current] + ' moves';
+  $('turnhint').textContent = s.current === 0 && ((s.humans || [0]).length <= 1)
+    ? 'your move'
+    : humanLabel(s.current) + "'s move";
   $('gametitle').textContent = 'Slay ' + s.arch[0].toUpperCase() + s.arch.slice(1);
 
   // board
@@ -172,7 +174,7 @@ const ring = (color, cls = '') =>
       d.innerHTML += ring(RING_COLOR[h.owner] || '#ffffff', 'breathe');
     }
     // nothing picked up: every man you *can* pick hops, Slay-style
-    if (!s.sel && h.owner === 0 && h.unit && !h.acted) d.classList.add('pickable');
+    if (!s.sel && h.owner === s.current && h.unit && !h.acted) d.classList.add('pickable');
     if (cursor.x === h.x && cursor.y === h.y) d.classList.add('cursor');
     d.addEventListener('click', () => {
       cursor = { x: h.x, y: h.y };
@@ -181,15 +183,18 @@ const ring = (color, cls = '') =>
     field.appendChild(d);
   }
 
-  // standings
+  // standings (humans tagged P1.. in hotseat games)
   const order = [...s.players].sort((a, b) => b.hexes - a.hexes);
-  $('standings').innerHTML = order.map((p) =>
-    `<tr class="${p.owner === 0 ? 'me' : ''} ${p.alive ? '' : 'dead'}">` +
+  const multi = (s.humans || [0]).length > 1;
+  $('standings').innerHTML = order.map((p) => {
+    const tag = multi && (s.humans || []).includes(p.owner)
+      ? ` P${s.humans.indexOf(p.owner) + 1}` : '';
+    return `<tr class="${p.owner === s.current ? 'me' : ''} ${p.alive ? '' : 'dead'}">` +
     `<td><span class="dot" style="background:${OWNER_DOT[p.owner]}"></span>` +
-    `<span class="name">${p.name}</span></td>` +
+    `<span class="name">${p.name}${tag}</span></td>` +
     `<td class="num">${p.hexes} hex</td>` +
-    `<td class="num">${p.owner === 0 ? s.totals.savings + 'g' : ''}</td></tr>`
-  ).join('');
+    `<td class="num">${p.owner === s.current ? s.totals.savings + 'g' : ''}</td></tr>`;
+  }).join('');
 
   // treasury: focused own territory, else totals
   const t = s.focus_terr || s.totals;
@@ -235,11 +240,13 @@ const ring = (color, cls = '') =>
 
   // end overlay
   if (s.winner !== null && s.winner !== undefined) {
-    const win = s.winner === 0;
-    $('end-title').textContent = win ? 'The island is yours' : 'Slain';
+    const humanWon = (s.humans || [0]).includes(s.winner);
+    $('end-title').textContent = humanWon
+      ? `${humanLabel(s.winner)} takes the island!`
+      : `${OWNER_NAME[s.winner] || 'Foe'} wins — you were slain`;
     const lands = order.map((p) => `${p.name} ${p.hexes}`).join(' · ');
     let best = '';
-    if (win) {
+    if (humanWon) {
       const prev = JSON.parse(localStorage.getItem('slay-best') || 'null');
       if (!prev || s.totals.hexes > prev.hexes) {
         localStorage.setItem('slay-best', JSON.stringify({ hexes: s.totals.hexes, round: s.round }));
@@ -247,11 +254,14 @@ const ring = (color, cls = '') =>
       }
     }
     $('end-sub').textContent = `${lands} · round ${s.round}${best}`;
-    if ($('end-overlay').classList.contains('hidden')) playSfx(win ? 'win' : 'lose');
+    if ($('end-overlay').classList.contains('hidden')) playSfx(humanWon ? 'win' : 'lose');
     $('end-overlay').classList.remove('hidden');
   } else {
     $('end-overlay').classList.add('hidden');
   }
+
+  maybePass(s);
+  updateCoach(s);
 }
 
 function setStat(id, txt, pos, neg = false) {
@@ -267,6 +277,16 @@ document.addEventListener('keydown', async (e) => {
     return;
   }
   if (!$('start-overlay').classList.contains('hidden')) return;
+  if (!$('menu-overlay').classList.contains('hidden')) return;
+  if (!$('mp-overlay').classList.contains('hidden')) return;
+  if (!$('creator-overlay').classList.contains('hidden')) return;
+  if (!$('pass-overlay').classList.contains('hidden')) {
+    if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      $('pass-overlay').classList.add('hidden');
+    }
+    return;
+  }
   if (e.key === 'ArrowUp') cursor.y = Math.max(0, cursor.y - 1);
   else if (e.key === 'ArrowDown') cursor.y = Math.min(99, cursor.y + 1);
   else if (e.key === 'ArrowLeft') cursor.x = Math.max(0, cursor.x - 1);
@@ -288,13 +308,223 @@ document.addEventListener('keydown', async (e) => {
   render(S);
 });
 
-function segWire(id, key) {
+function segWire(id, key, obj) {
+  const target = obj || opts;
   $(id).querySelectorAll('button').forEach((b) => {
     b.addEventListener('click', () => {
       $(id).querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
-      opts[key] = (key === 'diff') ? b.dataset.v : +b.dataset.v;
+      target[key] = (key === 'diff') ? b.dataset.v : +b.dataset.v;
+      if (typeof segChanged === 'function') segChanged(id);
     });
+  });
+}
+
+let launchCfg = null;
+let lastHuman = null;
+let tutIdx = 0, tutOff = false;
+const tutSeen = {};
+let mpCfg = { humans: 2, foes: 0, size: 0, diff: 'normal' };
+
+function showOnly(id) {
+  ['menu-overlay', 'start-overlay', 'mp-overlay', 'creator-overlay',
+   'end-overlay', 'help-overlay', 'pass-overlay'].forEach((x) => $(x).classList.add('hidden'));
+  if (id) $(id).classList.remove('hidden');
+}
+
+function showMenu() {
+  launchCfg = null;
+  try {
+    const best = JSON.parse(localStorage.getItem('slay-best') || 'null');
+    $('menu-best').textContent = best
+      ? `best conquest: ${best.hexes} hexes · round ${best.round}`
+      : 'no conquests yet. be the first.';
+  } catch { /* fresh start */ }
+  showOnly('menu-overlay');
+}
+
+async function startGame(cfg) {
+  launchCfg = cfg;
+  lastHuman = null;
+  tutOff = false;
+  for (const k in tutSeen) delete tutSeen[k];
+  showOnly(null);
+  const s = await cmd('new_game', {
+    seed: cfg.seed ?? null,
+    enemies: cfg.enemies,
+    difficulty: cfg.difficulty,
+    size: cfg.size,
+    humans: cfg.humans,
+    tutorial: !!cfg.tutorial,
+    custom: cfg.custom || null,
+  });
+  if (s) {
+    const mine = s.hexes.find((h) => h.owner === s.current);
+    if (mine) cursor = { x: mine.x, y: mine.y };
+    render(s);
+  }
+}
+
+function humanLabel(o) {
+  const hs = (S && S.humans) || [0];
+  if (hs.length <= 1) return o === 0 ? 'you' : OWNER_NAME[o];
+  return 'Player ' + (hs.indexOf(o) + 1);
+}
+
+function maybePass(s) {
+  const multi = (s.humans || [0]).length > 1;
+  if (multi && (s.winner === null || s.winner === undefined) && s.current !== lastHuman) {
+    lastHuman = s.current;
+    $('pass-who').textContent = humanLabel(s.current) + "'s move";
+    $('pass-overlay').classList.remove('hidden');
+  }
+}
+
+// ---- tutorial coach ----
+const TUTS = [
+  { t: 'Buy a peasant: click your glowing ⌂ house, then X (or tap Recruit → Peasant).',
+    done: (s) => s.hexes.some((h) => h.owner === s.current && h.unit) },
+  { t: 'Click your peasant to pick him up — he turns gold.',
+    done: (s) => tutSeen.sel || !!s.sel },
+  { t: 'Order him onto a glowing wild hex to claim it.',
+    done: (s) => s.hexes.filter((h) => h.owner === s.current).length >= 2 },
+  { t: 'End the turn with Space — watch the treasury pay out.',
+    done: (s) => s.round >= 2 },
+  { t: 'Buy a second peasant and stack him onto the first: hello, Spearman.',
+    done: (s) => s.hexes.some((h) => h.owner === s.current && h.unit >= 2) },
+];
+function updateCoach(s) {
+  const bar = $('coach-bar');
+  const active = launchCfg && launchCfg.mode === 'tutorial' && !tutOff &&
+    (s.winner === null || s.winner === undefined);
+  if (!active) { bar.classList.add('hidden'); return; }
+  if (s.sel) tutSeen.sel = true;
+  const i = TUTS.findIndex((t) => !t.done(s));
+  bar.classList.remove('hidden');
+  $('btn-coach-play').classList.add('hidden');
+  if (i === -1) {
+    $('coach-dots').textContent = '●'.repeat(TUTS.length);
+    $('coach-text').textContent = 'Graduated! Expand, combine, and cut foes in half.';
+    const b = $('btn-coach-play');
+    b.textContent = 'Play for real →';
+    b.classList.remove('hidden');
+  } else {
+    $('coach-dots').textContent = '●'.repeat(i) + '○'.repeat(TUTS.length - i);
+    $('coach-text').textContent = `Lesson ${i + 1}/${TUTS.length} — ${TUTS[i].t}`;
+  }
+}
+
+// ---- level creator ----
+const ED = { cols: 12, rows: 9, land: new Set(), starts: new Map(), tool: 'land' };
+const edKey = (x, y) => x + ',' + y;
+const ED_SIZES = [[12, 9], [15, 11], [18, 13]];
+function edReset(c, r) {
+  ED.cols = c; ED.rows = r;
+  ED.land = new Set(); ED.starts = new Map();
+  renderEditor();
+}
+function renderEditor() {
+  const f = $('editfield');
+  f.innerHTML = '';
+  const W = 40, H = 47;
+  f.style.width = ED.cols * W + W / 2 + 'px';
+  f.style.height = (ED.rows - 1) * (H * 0.75) + H + 'px';
+    for (let y = 0; y < ED.rows; y++) {
+    for (let x = 0; x < ED.cols; x++) {
+      const d = document.createElement('div');
+      d.className = 'hex';
+      d.dataset.x = x;
+      d.dataset.y = y;
+      d.style.left = (x * W + (y % 2 === 1 ? W / 2 : 0)) + 'px';
+      d.style.top = (y * (H * 0.75)) + 'px';
+      const k = edKey(x, y);
+      if (!ED.land.has(k)) {
+        d.classList.add('t-water');
+        d.innerHTML = ICONS.waves;
+      } else if (ED.starts.has(k)) {
+        const slot = ED.starts.get(k);
+        d.classList.add(['owner-you', 'owner-karg', 'owner-vex', 'owner-mord'][slot]);
+        d.innerHTML = `<span style="font-weight:700;color:#fff;position:relative;z-index:1">P${slot + 1}</span>`;
+      } else {
+        d.classList.add('t-open');
+      }
+      d.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        ED.painting = true;
+        edPaint(x, y);
+      });
+      d.addEventListener('pointerenter', (e) => {
+        if (ED.painting && (e.buttons & 1)) edPaint(x, y);
+      });
+      f.appendChild(d);
+    }
+  }
+  window.addEventListener('pointerup', () => { ED.painting = false; }, { once: false });
+  const slots = new Set(ED.starts.values());
+  const okLand = ED.land.size >= 12, okStarts = slots.size >= 2;
+  $('edit-status').textContent =
+    `${ED.land.size} land · ${slots.size} starts — ` +
+    (!okLand ? 'need 12+ land. ' : '') +
+    (!okStarts ? 'need 2+ starts (Start tool).' : 'ready ✓');
+}
+function edPaint(x, y) {
+  const k = edKey(x, y);
+  if (ED.tool === 'land') {
+    ED.land.add(k);
+  } else if (ED.tool === 'water') {
+    ED.land.delete(k);
+    ED.starts.delete(k);
+  } else {
+    if (!ED.land.has(k)) {
+      ED.land.add(k);
+      ED.starts.set(k, 0);
+    } else {
+      const cur = ED.starts.get(k);
+      if (cur === undefined) ED.starts.set(k, 0);
+      else if (cur >= 3) ED.starts.delete(k);
+      else ED.starts.set(k, cur + 1);
+    }
+  }
+  renderEditor();
+}
+function getMaps() {
+  try { return JSON.parse(localStorage.getItem('slay-maps') || '[]'); }
+  catch { return []; }
+}
+function renderMapList() {
+  const maps = getMaps();
+  $('map-list').innerHTML = maps.length ? '' : '<p class="tiny">No painted islands yet.</p>';
+  maps.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'maprow';
+    row.innerHTML = `<span class="nm">${m.name} · ${m.cols}×${m.rows}</span>`;
+    const play = document.createElement('button');
+    play.className = 'play';
+    play.textContent = 'Play';
+    play.addEventListener('click', () => playCustom(m));
+    const del = document.createElement('button');
+    del.textContent = 'Delete';
+    del.addEventListener('click', () => {
+      const all = getMaps();
+      all.splice(i, 1);
+      localStorage.setItem('slay-maps', JSON.stringify(all));
+      renderMapList();
+    });
+    row.appendChild(play);
+    row.appendChild(del);
+    $('map-list').appendChild(row);
+  });
+}
+function playCustom(m) {
+  const slots = [...new Set(m.starts.map((s) => s.slot))].sort();
+  startGame({
+    mode: 'custom', seed: null, enemies: slots.length - 1, difficulty: 'normal',
+    size: 0, humans: [0], tutorial: false,
+    custom: {
+      cols: m.cols, rows: m.rows,
+      land: m.land,
+      starts: slots.map((sl) => m.starts.find((s) => s.slot === sl).at),
+    },
   });
 }
 
@@ -379,31 +609,110 @@ function applyTheme(name) {
   if (sel) sel.value = name;
 }
 
+function segChanged(id) {
+  if (id === 'seg-editsize') {
+    const v = +document.querySelector('#seg-editsize .on').dataset.v;
+    const [c, r] = ED_SIZES[v];
+    if (c !== ED.cols || r !== ED.rows) edReset(c, r);
+    return;
+  }
+  const hint = $('mp-hint');
+  if (hint && ['seg-humans', 'seg-aifoes'].includes(id)) {
+    const f = Math.min(mpCfg.foes, 4 - mpCfg.humans);
+    hint.textContent = `${mpCfg.humans} humans · ${f} AI` +
+      (mpCfg.humans + mpCfg.foes > 4 ? ' (capped at 4 seats)' : '');
+  }
+}
+
 async function boot() {
   segWire('seg-foes', 'foes');
   segWire('seg-diff', 'diff');
   segWire('seg-size', 'size');
+  segWire('seg-humans', 'humans', mpCfg);
+  segWire('seg-aifoes', 'foes', mpCfg);
+  segWire('seg-mpsize', 'size', mpCfg);
+  segWire('seg-mpdiff', 'diff', mpCfg);
   $('seed-dice').addEventListener('click', () => {
     $('seed-input').value = Math.floor(Math.random() * 90000 + 10000);
   });
   $('btn-start').addEventListener('click', async () => {
     const raw = $('seed-input').value.trim();
     const seed = raw === '' ? null : parseInt(raw, 10);
-    $('start-overlay').classList.add('hidden');
-    await cmd('new_game', {
-      seed: Number.isFinite(seed) ? seed : null,
-      enemies: opts.foes,
-      difficulty: opts.diff,
-      size: opts.size,
+    startGame({
+      mode: 'single', seed: Number.isFinite(seed) ? seed : null,
+      enemies: opts.foes, difficulty: opts.diff, size: opts.size,
+      humans: [0], tutorial: false, custom: null,
     });
-    if (S) {
-      const mine = S.hexes.find((h) => h.owner === 0);
-      if (mine) cursor = { x: mine.x, y: mine.y };
-      render(S);
-    }
   });
+  $('btn-start-back').addEventListener('click', showMenu);
+  $('btn-menu-single').addEventListener('click', () => showOnly('start-overlay'));
+  $('btn-menu-multi').addEventListener('click', () => { segChanged(); showOnly('mp-overlay'); });
+  $('btn-menu-tutorial').addEventListener('click', () => startGame({
+    mode: 'tutorial', seed: 424242, enemies: 1, difficulty: 'easy',
+    size: 0, humans: [0], tutorial: true, custom: null,
+  }));
+  $('btn-menu-creator').addEventListener('click', () => {
+    renderEditor();
+    renderMapList();
+    showOnly('creator-overlay');
+  });
+  $('btn-mp-back').addEventListener('click', showMenu);
+  $('btn-mp-start').addEventListener('click', () => {
+    const h = mpCfg.humans;
+    const f = Math.min(mpCfg.foes, 4 - h);
+    startGame({
+      mode: h > 1 ? 'hotseat' : 'single', seed: null,
+      enemies: h + f - 1, difficulty: mpCfg.diff, size: mpCfg.size,
+      humans: [...Array(h).keys()], tutorial: false, custom: null,
+    });
+  });
+  $('btn-pass-begin').addEventListener('click', () => $('pass-overlay').classList.add('hidden'));
+  $('btn-coach-skip').addEventListener('click', () => { tutOff = true; $('coach-bar').classList.add('hidden'); });
+  $('btn-coach-play').addEventListener('click', showMenu);
+  // creator toolbar
+  segWire('seg-tool', 'tool', ED);
+  segWire('seg-editsize', 'edsize', { edsize: 0 });
+  $('btn-edit-clear').addEventListener('click', () => {
+    const [c, r] = ED_SIZES[+document.querySelector('#seg-editsize .on').dataset.v];
+    edReset(c, r);
+  });
+  $('btn-edit-save').addEventListener('click', () => {
+    const name = ($('map-name').value.trim() || `Isle ${getMaps().length + 1}`).slice(0, 24);
+    const slots = [...new Set(ED.starts.values())].sort();
+    if (ED.land.size < 12) { $('edit-status').textContent = 'Need 12+ land hexes.'; return; }
+    if (slots.length < 2) { $('edit-status').textContent = 'Need 2+ starts (Start tool).'; return; }
+    const maps = getMaps();
+    maps.push({
+      name, cols: ED.cols, rows: ED.rows,
+      land: [...ED.land].map((k) => k.split(',').map(Number)),
+      starts: slots.map((sl) => ({
+        slot: sl,
+        at: [...ED.starts.entries()].find(([k, v]) => v === sl)[0].split(',').map(Number),
+      })),
+    });
+    localStorage.setItem('slay-maps', JSON.stringify(maps));
+    $('map-name').value = '';
+    renderMapList();
+    $('edit-status').textContent = `Saved “${name}”.`;
+  });
+  $('btn-edit-play').addEventListener('click', () => {
+    const slots = [...new Set(ED.starts.values())].sort();
+    if (ED.land.size < 12 || slots.length < 2) {
+      $('edit-status').textContent = 'Need 12+ land and 2+ starts first.';
+      return;
+    }
+    playCustom({
+      name: 'draft', cols: ED.cols, rows: ED.rows,
+      land: [...ED.land].map((k) => k.split(',').map(Number)),
+      starts: slots.map((sl) => ({
+        slot: sl,
+        at: [...ED.starts.entries()].find(([k, v]) => v === sl)[0].split(',').map(Number),
+      })),
+    });
+  });
+  $('btn-edit-back').addEventListener('click', showMenu);
   $('btn-same').addEventListener('click', () => cmd('rematch', { same: true }));
-  $('btn-new').addEventListener('click', () => cmd('rematch', { same: false }));
+  $('btn-new').addEventListener('click', showMenu);
   $('btn-close-help').addEventListener('click', () => $('help-overlay').classList.add('hidden'));
   $('row-peasant').addEventListener('click', () => cmd('buy', { kind: 'man' }));
   $('row-castle').addEventListener('click', () => cmd('buy', { kind: 'castle' }));
@@ -425,6 +734,7 @@ async function boot() {
   if (stored && presets.includes(stored)) applyTheme(stored);
   else if (omarchy && omarchy.name && presets.includes(omarchy.name)) applyTheme(omarchy.name);
   else applyTheme('atoll');
+  showMenu();
 }
 
 // click-drag panning for big maps (mouse only; touch uses native scroll).
