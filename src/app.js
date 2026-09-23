@@ -299,8 +299,6 @@ function render(s) {
       // the selected hex already wears gold: keep guard blue off it
       const selKey = s.sel ? s.sel[0] + ',' + s.sel[1] : null;
       let perim = '', guardP = '';
-      const dots = new Set();
-      const dot = (x, y) => dots.add(x.toFixed(1) + ',' + y.toFixed(1));
       for (const key of outline) {
         const [x, y] = key.split(',').map(Number);
         const p = at(x, y);
@@ -308,28 +306,18 @@ function render(s) {
         for (const dk in offs) {
           const [dx, dy] = dk.split(',').map(Number);
           if (!outline.has((x + dx) + ',' + (y + dy))) {
-            // exact shared border (no inset): both neighbours compute the
-            // identical endpoints, so joints meet with zero gap
+            // exact shared border: both neighbours compute byte-identical
+            // endpoints, and round caps fuse the joints — no dots needed
             const e = offs[dk];
             const [ax, ay] = hexPt(p.left, p.top, e, 1.0);
             const [bx, by] = hexPt(p.left, p.top, (e + 1) % 6, 1.0);
             perim += `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)} `;
-            dot(ax, ay);
-            dot(bx, by);
           }
         }
         // guard lives clearly INSIDE the white border, never on top of it
         if (guard.has(key) && key !== selKey) guardP += hexPoly(p.left, p.top, 0.74);
       }
       shape(perim, 'rl-perim', pcol);
-      if (dots.size) {
-        let c = '';
-        for (const v of dots) {
-          const [vx, vy] = v.split(',');
-          c += `<circle cx="${vx}" cy="${vy}" r="2.2" fill="${pcol}" opacity=".55"/>`;
-        }
-        layer.insertAdjacentHTML('beforeend', c);
-      }
       if (guardP) shape(guardP, 'rl-guard');
     }
     if (s.sel) {
