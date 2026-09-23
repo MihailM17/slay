@@ -74,6 +74,49 @@ function toggleSfx() {
 
 const $ = (id) => document.getElementById(id);
 
+// Play one command's worth of combat effects after render rebuilt the board.
+// Human actions animate fully; AI leftovers get a red ring so raids read.
+function playFx(s) {
+  const fx = s.fx || [];
+  if (!fx.length || !window.hexEls) return;
+  const humans = s.humans || [0];
+  const at = ([x, y]) => window.hexEls[x + ',' + y];
+  const lungeTo = (from, to) => {
+    const a = at(from), b = at(to);
+    if (!a || !b) return;
+    const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+    const dx = (br.left - ar.left), dy = (br.top - ar.top);
+    const len = Math.hypot(dx, dy) || 1;
+    a.style.setProperty('--lx', (dx / len * 16).toFixed(1) + 'px');
+    a.style.setProperty('--ly', (dy / len * 16).toFixed(1) + 'px');
+    a.classList.add('lunge');
+  };
+  for (const e of fx) {
+    const mine = e.by === undefined || humans.includes(e.by);
+    if (e.t === 'attack') {
+      if (mine) {
+        lungeTo(e.from, e.to);
+        const t = at(e.to);
+        if (t) t.classList.add('captured');
+      } else {
+        const t = at(e.to);
+        if (t && !t.querySelector('svg.ring')) t.innerHTML += ring('#e25f66', 'pulse');
+      }
+    } else if (e.t === 'capture') {
+      if (!mine) {
+        const t = at(e.at);
+        if (t && !t.querySelector('svg.ring')) t.innerHTML += ring('#e25f66', 'pulse');
+      }
+    } else if (e.t === 'combine' || e.t === 'chop' || e.t === 'buy') {
+      const t = at(e.at);
+      if (t) t.classList.add('pop');
+    } else if (e.t === 'starve') {
+      const t = at(e.at);
+      if (t) t.classList.add('starve');
+    }
+  }
+}
+
 async function cmd(name, args = {}) {
   if (busy) return null;
   busy = true;
@@ -81,6 +124,7 @@ async function cmd(name, args = {}) {
     const s = await invoke(name, args);
     if (s.sfx) playSfx(s.sfx);
     render(s);
+    playFx(s);
     return s;
   } finally {
     busy = false;
@@ -90,6 +134,14 @@ async function cmd(name, args = {}) {
 function hexPos(x, y) {
   return { left: x * HEX_W + (y % 2 === 1 ? HEX_W / 2 : 0), top: y * (HEX_H * 0.75) };
 }
+
+const RING_COLOR = { 0: '#ffffff', 1: '#e25f66', 2: '#e0a23f', 3: '#b48ce8' };
+// True hexagon outline: an SVG polygon, because CSS borders are always
+// rectangular and clip-path only cuts them into misleading bars.
+const ring = (color, cls = '') =>
+  `<svg class="ring ${cls}" viewBox="0 0 62 72">` +
+  `<polygon points="31,3 59,20 59,52 31,69 3,52 3,20" fill="none" ` +
+  `stroke="${color}" stroke-width="3"/></svg>`;
 
 function render(s) {
   S = s;
@@ -110,17 +162,10 @@ function render(s) {
   const rows = Math.max(...s.hexes.map((h) => h.y)) + 1;
   field.style.width = cols * HEX_W + HEX_W / 2 + 'px';
   field.style.height = (rows - 1) * (HEX_H * 0.75) + HEX_H + 'px';
-const RING_COLOR = { 0: '#ffffff', 1: '#e25f66', 2: '#e0a23f', 3: '#b48ce8' };
-// True hexagon outline: an SVG polygon, because CSS borders are always
-// rectangular and clip-path only cuts them into misleading bars.
-const ring = (color, cls = '') =>
-  `<svg class="ring ${cls}" viewBox="0 0 62 72">` +
-  `<polygon points="31,3 59,20 59,52 31,69 3,52 3,20" fill="none" ` +
-  `stroke="${color}" stroke-width="3"/></svg>`;
-
   const tset = new Set(s.targets.map(([x, y]) => x + ',' + y));
   const outline = new Set((s.outline || []).map(([x, y]) => x + ',' + y));
   const guard = new Set((s.guard || []).map(([x, y]) => x + ',' + y));
+  const hexEls = {};
   for (const h of s.hexes) {
     const d = document.createElement('div');
     d.className = 'hex';
@@ -188,7 +233,9 @@ const ring = (color, cls = '') =>
       cmd('click_hex', { x: h.x, y: h.y });
     });
     field.appendChild(d);
+    hexEls[h.x + ',' + h.y] = d;
   }
+  window.hexEls = hexEls;
 
   // standings (humans tagged P1.. in hotseat games, current seat pulses)
   const order = [...s.players].sort((a, b) => b.hexes - a.hexes);

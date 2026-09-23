@@ -29,6 +29,7 @@ fn new_game(
 #[tauri::command]
 fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
     let mut g = state.0.lock().unwrap();
+    g.fx.clear();
     if !g.in_bounds(x, y) {
         return g.snapshot(String::new(), String::new());
     }
@@ -92,6 +93,7 @@ fn click_hex(state: State<AppState>, x: i32, y: i32) -> UiState {
 #[tauri::command]
 fn buy(state: State<AppState>, kind: String) -> UiState {
     let mut g = state.0.lock().unwrap();
+    g.fx.clear();
     let me = g.current;
     let msg = match g.focus {
         Some((x, y)) => g.buy(x, y, &kind, me).unwrap_or_else(|e| e),
@@ -119,6 +121,7 @@ fn cancel_sel(state: State<AppState>) -> UiState {
 #[tauri::command]
 fn end_turn(state: State<AppState>) -> UiState {
     let mut g = state.0.lock().unwrap();
+    g.fx.clear();
     g.advance_turn();
     let over = g.winner().is_some();
     let (msg, sfx) = if over {

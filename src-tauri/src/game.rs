@@ -30,6 +30,20 @@ pub enum Tree {
     Palm,
 }
 
+/// One visual effect for the frontend to play after a command resolves.
+/// Collected per command (cleared by each Tauri command handler).
+#[derive(Clone, Debug, Ser2)]
+#[serde(tag = "t", rename_all = "lowercase")]
+pub enum Fx {
+    Attack { from: (i32, i32), to: (i32, i32), by: i8 },
+    Capture { at: (i32, i32), by: i8 },
+    Move { from: (i32, i32), to: (i32, i32) },
+    Combine { at: (i32, i32), rank: u8 },
+    Chop { at: (i32, i32) },
+    Buy { at: (i32, i32), castle: bool },
+    Starve { at: (i32, i32) },
+}
+
 #[derive(Clone, Debug)]
 pub struct Hex {
     pub water: bool,
@@ -79,6 +93,7 @@ pub struct Game {
     pub tutorial: bool,
     pub custom: Option<CustomSpec>,
     pub tut_pine: Option<(i32, i32)>,
+    pub fx: Vec<Fx>,
     rng: StdRng,
 }
 
@@ -174,6 +189,7 @@ impl Game {
             tutorial,
             custom: custom.clone(),
             tut_pine: None,
+            fx: vec![],
             rng: StdRng::seed_from_u64(seed ^ 0x9e3779b97f4a7c15),
         };
         if custom_ok {
@@ -524,6 +540,7 @@ impl Game {
                         self.grid[i].unit = 0;
                         self.grid[i].acted = false;
                         self.grid[i].grave = true;
+                        self.fx.push(Fx::Starve { at: (x, y) });
                     }
                 }
                 self.terrs[ti].savings = 0;
@@ -628,6 +645,8 @@ impl Game {
             fh.unit = 0;
             fh.acted = false;
         }
+        self.fx.push(Fx::Attack { from: (fx, fy), to: (tx, ty), by: who });
+        self.fx.push(Fx::Capture { at: (tx, ty), by: who });
         self.recompute();
         Ok(format!("{} takes a hex.", rank_name(s)))
     }
@@ -655,6 +674,7 @@ impl Game {
             let fi = Self::idx(self.cols, fx, fy);
             self.grid[fi].unit = 0;
             self.grid[fi].acted = false;
+            self.fx.push(Fx::Combine { at: (tx, ty), rank: s });
             return Ok(format!("Combined into {}.", rank_name(s)));
         }
         if self.grid[ti2].castle {
@@ -678,8 +698,10 @@ impl Game {
         }
         if chop {
             self.grid[ti2].acted = true;
+            self.fx.push(Fx::Chop { at: (tx, ty) });
             return Ok("Chopped a tree.".to_string());
         }
+        self.fx.push(Fx::Move { from: (fx, fy), to: (tx, ty) });
         Ok("Moved.".to_string())
     }
 
@@ -712,6 +734,7 @@ impl Game {
             }
         }
         self.terrs[ti].savings -= cost;
+        self.fx.push(Fx::Buy { at: (x, y), castle: kind == "castle" });
         Ok(if kind == "castle" { "Castle built.".to_string() } else { "Peasant ready.".to_string() })
     }
 
@@ -1175,6 +1198,7 @@ pub struct UiState {
     pub log: Vec<String>,
     pub msg: String,
     pub sfx: String,
+    pub fx: Vec<Fx>,
     pub winner: Option<i8>,
 }
 
@@ -1331,6 +1355,7 @@ impl Game {
             log: self.log.clone(),
             msg,
             sfx,
+            fx: self.fx.clone(),
             winner: self.winner(),
         }
     }
@@ -1478,6 +1503,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fx_feed_describes_actions() {
+        let mut g = Game::new(Some(11), 1, "normal", 0, vec![0], false, None);
+        g.start_turn(0);
+        let (sx, sy) = g.starts[0];
+        g.buy(sx, sy, "man", 0).unwrap();
+        assert!(g.fx.iter().any(|e| matches!(e, Fx::Buy { castle: false, .. })));
+        g.fx.clear();
+        let tgt = g.neighbours(sx, sy).into_iter().find(|&(nx, ny)| {
+            let h = &g.grid[Game::idx(g.cols, nx, ny)];
+            h.owner == -1 && !h.water
+        }).unwrap();
+        g.do_attack(sx, sy, tgt.0, tgt.1, 0).unwrap();
+        assert!(g.fx.iter().any(|e| matches!(e, Fx::Attack { .. })));
+        assert!(g.fx.iter().any(|e| matches!(e, Fx::Capture { .. })));
     }
 
     #[test]
