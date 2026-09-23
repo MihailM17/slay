@@ -117,6 +117,29 @@ function playFx(s) {
   }
 }
 
+// Center the view on your capital (or first hex) and ping it, so you
+// never have to hunt for your start when a turn begins.
+function pingCapital() {
+  if (!S) return;
+  const mine = S.hexes.filter((h) => h.owner === S.current);
+  if (!mine.length) return;
+  const cap = mine.find((h) => h.capital) || mine[0];
+  cursor = { x: cap.x, y: cap.y };
+  render(S);
+  const el = window.hexEls && window.hexEls[cap.x + ',' + cap.y];
+  if (!el) return;
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  } catch { /* small boards: nothing to scroll */ }
+  el.innerHTML += ring('var(--gold)', 'pulse');
+  setTimeout(() => {
+    if (!el.isConnected) return;
+    const r = el.querySelector('svg.ring.pulse');
+    // only remove the ping if nothing else claimed the hex meanwhile
+    if (r && !S.sel) r.remove();
+  }, 1700);
+}
+
 async function cmd(name, args = {}) {
   if (busy) return null;
   busy = true;
@@ -125,6 +148,7 @@ async function cmd(name, args = {}) {
     if (s.sfx) playSfx(s.sfx);
     render(s);
     playFx(s);
+    if ((name === 'new_game' || name === 'end_turn') && !s.winner) pingCapital();
     return s;
   } finally {
     busy = false;
@@ -186,10 +210,10 @@ function render(s) {
     } else {
       d.classList.add(OWNER_CLASS[h.owner] || 'owner-you');
       if (h.unit) {
-        inner = ICONS.person + `<div class="pips">${'●'.repeat(h.unit)}</div>`;
+        inner = `<span class="bob"><span class="uniticon">${ICONS.person}</span><div class="pips">${'●'.repeat(h.unit)}</div></span>`;
         if (h.acted) d.classList.add('spent');
       } else if (h.castle) {
-        inner = ICONS.castle;
+        inner = `<span class="bob"><span class="uniticon">${ICONS.castle}</span></span>`;
       } else if (h.capital) {
         inner = ICONS.castle + ring(h.afford ? 'var(--gold)' : 'var(--ink-faint)');
       } else if (h.tree) {
@@ -200,7 +224,7 @@ function render(s) {
         inner = ICONS.grave;
       }
     }
-    d.innerHTML = inner;
+    d.innerHTML = '<div class="hexbg"></div>' + inner;
     if (s.sel && s.sel[0] === h.x && s.sel[1] === h.y) {
       d.classList.add('selected');
       d.innerHTML += ring('var(--gold)');
@@ -484,16 +508,18 @@ function renderEditor() {
       d.style.left = (x * W + (y % 2 === 1 ? W / 2 : 0)) + 'px';
       d.style.top = (y * (H * 0.75)) + 'px';
       const k = edKey(x, y);
+      let eInner = '';
       if (!ED.land.has(k)) {
         d.classList.add('t-water');
-        d.innerHTML = ICONS.waves;
+        eInner = ICONS.waves;
       } else if (ED.starts.has(k)) {
         const slot = ED.starts.get(k);
         d.classList.add(['owner-you', 'owner-karg', 'owner-vex', 'owner-mord'][slot]);
-        d.innerHTML = `<span style="font-weight:700;color:#fff;position:relative;z-index:1">P${slot + 1}</span>`;
+        eInner = `<span style="font-weight:700;color:#fff;position:relative;z-index:1">P${slot + 1}</span>`;
       } else {
         d.classList.add('t-open');
       }
+      d.innerHTML = '<div class="hexbg"></div>' + eInner;
       d.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         ED.painting = true;

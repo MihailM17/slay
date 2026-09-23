@@ -81,11 +81,15 @@ body::after{
 .hexfield{position:relative; margin:0 auto;}
 .hex{
   position:absolute; width:62px; height:72px;
-  --hexclip:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  clip-path:var(--hexclip);
   display:flex; align-items:center; justify-content:center; flex-direction:column;
   cursor:pointer;
 }
+.hex .hexbg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.hex .bob{display:flex; flex-direction:column; align-items:center; position:relative; z-index:1;}
+.hex .uniticon{display:contents; color:var(--ink);}
 .hex:hover{filter:brightness(1.4);}
 .hex svg{width:24px; height:24px; position:relative; z-index:1; opacity:.95;}
 .hex .pips{position:relative; z-index:1; font-size:8px; letter-spacing:2px; color:var(--gold); line-height:1; margin-top:1px;}
@@ -93,16 +97,17 @@ body::after{
 .hex svg.ring.pulse{animation:pulse 1.1s ease-in-out infinite;}
 .hex svg.ring.breathe{animation:breathe 2.6s ease-in-out infinite;}
 .hex svg.ring.guard{opacity:.9;}
-.t-water{background:var(--water-bg); color:var(--water-ink);}
-.t-forest{background:var(--forest-bg); color:var(--forest-ink);}
-.t-grave{background:var(--grave-bg); color:var(--grave-ink);}
-.t-village{background:var(--village-bg); color:var(--village-ink);}
-.t-rich{background:var(--rich-bg); color:var(--rich-ink);}
-.t-open{background:var(--open-bg);}
-.owner-you{background:var(--you-bg); color:var(--you);}
-.owner-karg{background:var(--karg-bg); color:var(--karg);}
-.owner-vex{background:var(--vex-bg); color:var(--vex);}
-.owner-mord{background:var(--mord-bg); color:var(--mord);}
+.t-water > .hexbg{background:var(--water-bg);} .t-water{color:var(--water-ink);}
+.t-water svg{opacity:.55;}
+.t-forest > .hexbg{background:var(--forest-bg);} .t-forest{color:var(--forest-ink);}
+.t-grave > .hexbg{background:var(--grave-bg);} .t-grave{color:var(--grave-ink);}
+.t-village > .hexbg{background:var(--village-bg);} .t-village{color:var(--village-ink);}
+.t-rich > .hexbg{background:var(--rich-bg);} .t-rich{color:var(--rich-ink);}
+.t-open > .hexbg{background:var(--open-bg);}
+.owner-you > .hexbg{background:var(--you-bg);} .owner-you{color:var(--you);}
+.owner-karg > .hexbg{background:var(--karg-bg);} .owner-karg{color:var(--karg);}
+.owner-vex > .hexbg{background:var(--vex-bg);} .owner-vex{color:var(--vex);}
+.owner-mord > .hexbg{background:var(--mord-bg);} .owner-mord{color:var(--mord);}
 .hex.spent svg{opacity:.45;}
 .hex.cursor{filter:drop-shadow(0 0 6px #ffffff) drop-shadow(0 0 2px #ffffff);}
 .hex.selected.cursor{filter:drop-shadow(0 0 7px var(--gold)) drop-shadow(0 0 4px #ffffff);}
@@ -115,11 +120,11 @@ body::after{
 @keyframes breathe{0%,100%{opacity:.8}50%{opacity:.3}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(.7);opacity:.55}}
 @keyframes lunge{0%{transform:translate(0,0)}35%{transform:translate(var(--lx,0px),var(--ly,0px))}100%{transform:translate(0,0)}}
-.hex.lunge{animation:lunge .32s ease-out; z-index:5;}
+.hex.lunge .bob{animation:lunge .32s ease-out;}
 @keyframes capflash{0%{filter:brightness(2.4) saturate(1.4)}100%{filter:none}}
 .hex.captured{animation:capflash .55s ease-out;}
 @keyframes popin{0%{transform:scale(.4)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
-.hex.pop > svg:not(.ring){animation:popin .28s ease-out; transform-origin:center;}
+.hex.pop .bob{animation:popin .28s ease-out; transform-origin:center;}
 @keyframes gravein{from{opacity:0}to{opacity:1}}
 .hex.starve svg:not(.ring){animation:gravein .7s ease;}
 #end-overlay:not(.hidden) .card{animation:cardin .45s ease-out;}
@@ -127,13 +132,13 @@ body::after{
 #end-overlay:not(.hidden) .card h1{animation:winpulse 1.8s ease-in-out infinite;}
 @keyframes winpulse{0%,100%{text-shadow:0 0 0 transparent}50%{text-shadow:0 0 22px var(--gold)}}
 @media (prefers-reduced-motion: reduce){
-  .hex.lunge,.hex.captured,.hex.pop > svg:not(.ring),.hex.starve svg:not(.ring),
+  .hex.lunge .bob,.hex.captured,.hex.pop .bob,.hex.starve svg:not(.ring),
   #end-overlay:not(.hidden) .card,#end-overlay:not(.hidden) .card h1{animation:none;}
 }
 @media (prefers-reduced-motion: reduce){ .hex .move-dot{animation:none;} }
 @keyframes hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
-.hex.pickable svg{animation:hop .9s ease-in-out infinite;}
-@media (prefers-reduced-motion: reduce){ .hex.pickable svg{animation:none;} }
+.hex.pickable .bob{animation:hop .9s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){ .hex.pickable .bob{animation:none;} }
 .selected{filter:drop-shadow(0 0 7px var(--gold)) drop-shadow(0 0 2px var(--gold));}
 .target{filter:drop-shadow(0 0 5px #58d68d);}
 
