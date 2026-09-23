@@ -55,7 +55,8 @@ jobs:
   # attach to the same tag release.
   android:
     permissions:
-      contents: write
+      contents: read
+      actions: write
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +100,8 @@ jobs:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          files: src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
+          name: slay-android-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
+          if-no-files-found: error
