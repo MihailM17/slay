@@ -99,14 +99,10 @@ function playFx(s) {
         const t = at(e.to);
         if (t) t.classList.add('captured');
       } else {
-        const t = at(e.to);
-        if (t && !t.querySelector('svg.ring')) t.innerHTML += ring('#e25f66', 'pulse');
+        aiMark(e.to);
       }
     } else if (e.t === 'capture') {
-      if (!mine) {
-        const t = at(e.at);
-        if (t && !t.querySelector('svg.ring')) t.innerHTML += ring('#e25f66', 'pulse');
-      }
+      if (!mine) aiMark(e.at);
     } else if (e.t === 'combine' || e.t === 'chop' || e.t === 'buy') {
       const t = at(e.at);
       if (t) t.classList.add('pop');
@@ -115,6 +111,17 @@ function playFx(s) {
       if (t) t.classList.add('starve');
     }
   }
+}
+
+// Enemy-raid marker on the top overlay (never buried, unlike per-hex rings).
+function aiMark([x, y]) {
+  const layer = document.getElementById('ringlayer');
+  if (!layer) return;
+  const p = hexPos(x, y);
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', hexPoly(p.left, p.top));
+  el.setAttribute('class', 'rl-ai');
+  layer.appendChild(el);
 }
 
 // Center the view on your capital (or first hex) and ping it, so you
@@ -131,10 +138,16 @@ function pingCapital() {
   try {
     el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
   } catch { /* small boards: nothing to scroll */ }
-  el.innerHTML += ring('var(--gold)', 'pulse');
+  const p = hexPos(cap.x, cap.y);
+  const layer = document.getElementById('ringlayer');
+  if (!layer) return;
+  const ping = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  ping.setAttribute('d', hexPoly(p.left, p.top));
+  ping.setAttribute('class', 'rl-ping');
+  ping.id = 'ping-ring';
+  layer.appendChild(ping);
   setTimeout(() => {
-    if (!el.isConnected) return;
-    const r = el.querySelector('svg.ring.pulse');
+    const r = document.getElementById('ping-ring');
     // only remove the ping if nothing else claimed the hex meanwhile
     if (r && !S.sel) r.remove();
   }, 1700);
@@ -160,12 +173,31 @@ function hexPos(x, y) {
 }
 
 const RING_COLOR = { 0: '#ffffff', 1: '#e25f66', 2: '#e0a23f', 3: '#b48ce8' };
-// True hexagon outline: an SVG polygon, because CSS borders are always
-// rectangular and clip-path only cuts them into misleading bars.
-const ring = (color, cls = '') =>
-  `<svg class="ring ${cls}" viewBox="0 0 62 72">` +
-  `<polygon points="31,3 59,20 59,52 31,69 3,52 3,20" fill="none" ` +
-  `stroke="${color}" stroke-width="3"/></svg>`;
+// ---- ring overlay: ONE svg above all hexes, so outlines are never buried
+// under later-painted neighbours (the old per-hex rings lost their bottom
+// edges that way). Perimeter = outer edges only, no interior double walls.
+const HEX_PTS = [[31, 0], [62, 18], [62, 54], [31, 72], [0, 54], [0, 18]];
+const EDGE_OF = {
+  even: { '1,0': 1, '-1,0': 4, '0,-1': 0, '-1,-1': 5, '0,1': 2, '-1,1': 3 },
+  odd: { '1,0': 1, '-1,0': 4, '1,-1': 0, '0,-1': 5, '1,1': 2, '0,1': 3 },
+};
+function hexPt(x0, y0, i, inset = 0.9) {
+  const cx = x0 + 31, cy = y0 + 36;
+  const [vx, vy] = HEX_PTS[i];
+  return [cx + (vx - cx) * inset, cy + (vy - cy) * inset];
+}
+function edgeSeg(x0, y0, e) {
+  const [ax, ay] = hexPt(x0, y0, e), [bx, by] = hexPt(x0, y0, (e + 1) % 6);
+  return `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)} `;
+}
+function hexPoly(x0, y0) {
+  let d = '';
+  for (let e = 0; e < 6; e++) {
+    const [ax, ay] = hexPt(x0, y0, e);
+    d += (e ? 'L' : 'M') + ` ${ax.toFixed(1)} ${ay.toFixed(1)} `;
+  }
+  return d + 'Z';
+}
 
 function render(s) {
   S = s;
@@ -215,7 +247,7 @@ function render(s) {
       } else if (h.castle) {
         inner = `<span class="bob"><span class="uniticon">${ICONS.castle}</span></span>`;
       } else if (h.capital) {
-        inner = ICONS.castle + ring(h.afford ? 'var(--gold)' : 'var(--ink-faint)');
+        inner = ICONS.castle;
       } else if (h.tree) {
         inner = ICONS.pine;
         if (h.tree === 'palm') inner = `<span style="color:#4fb3a9">${ICONS.pine}</span>`;
@@ -225,28 +257,13 @@ function render(s) {
       }
     }
     d.innerHTML = '<div class="hexbg"></div>' + inner;
-    if (s.sel && s.sel[0] === h.x && s.sel[1] === h.y) {
-      d.classList.add('selected');
-      d.innerHTML += ring('var(--gold)');
-    }
+    if (s.sel && s.sel[0] === h.x && s.sel[1] === h.y) d.classList.add('selected');
     if (tset.has(h.x + ',' + h.y)) {
       d.classList.add('target');
-      // free-looking hexes get a chess-style dot, everything defended
-      // (units, castles, houses, graves, enemy soil) gets the hot ring
       if (h.owner !== 0 || h.unit || h.castle || h.capital || h.grave) {
         d.classList.add('target-foe');
-        d.innerHTML += ring('#58d68d', 'pulse');
       } else {
         d.innerHTML += '<div class="move-dot"></div>';
-      }
-    }
-    if (outline.has(h.x + ',' + h.y)) {
-      // guard zone (what this house/castle/man protects) outranks the
-      // plain territory outline with its own shield-blue ring
-      if (guard.has(h.x + ',' + h.y)) {
-        d.innerHTML += ring('#6fb7ff', 'guard');
-      } else {
-        d.innerHTML += ring(RING_COLOR[h.owner] || '#ffffff', 'breathe');
       }
     }
     // nothing picked up: every man you *can* pick hops, Slay-style
@@ -260,6 +277,72 @@ function render(s) {
     hexEls[h.x + ',' + h.y] = d;
   }
   window.hexEls = hexEls;
+
+  // ring overlay: ONE svg above all hex bodies, so outlines are never
+  // buried under later-painted neighbours. Perimeter = outer edges only.
+  {
+    const byKey = {};
+    for (const h of s.hexes) byKey[h.x + ',' + h.y] = h;
+    const at = (x, y) => hexPos(x, y);
+    const layer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    layer.id = 'ringlayer';
+    layer.setAttribute('width', parseFloat(field.style.width));
+    layer.setAttribute('height', parseFloat(field.style.height));
+    const shape = (d, cls, stroke) => {
+      if (!d) return;
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('class', cls);
+      if (stroke) p.setAttribute('stroke', stroke);
+      layer.appendChild(p);
+    };
+    if (outline.size) {
+      const first = byKey[[...outline][0]];
+      const pcol = RING_COLOR[(first && first.owner) ?? -1] || '#ffffff';
+      // the selected hex already wears gold: keep guard blue off it
+      const selKey = s.sel ? s.sel[0] + ',' + s.sel[1] : null;
+      let perim = '', guardP = '';
+      for (const key of outline) {
+        const [x, y] = key.split(',').map(Number);
+        const p = at(x, y);
+        const offs = (y & 1) ? EDGE_OF.odd : EDGE_OF.even;
+        for (const dk in offs) {
+          const [dx, dy] = dk.split(',').map(Number);
+          if (!outline.has((x + dx) + ',' + (y + dy))) {
+            perim += edgeSeg(p.left, p.top, offs[dk]);
+          }
+        }
+        if (guard.has(key) && key !== selKey) guardP += hexPoly(p.left, p.top);
+      }
+      shape(perim, 'rl-perim', pcol);
+      if (guardP) shape(guardP, 'rl-guard');
+    }
+    if (s.sel) {
+      const p = at(s.sel[0], s.sel[1]);
+      shape(hexPoly(p.left, p.top), 'rl-sel');
+    }
+    let foe = '';
+    for (const key of tset) {
+      const [x, y] = key.split(',').map(Number);
+      const h = byKey[key];
+      if (!h) continue;
+      const p = at(x, y);
+      if (h.owner !== 0 || h.unit || h.castle || h.capital || h.grave) {
+        foe += hexPoly(p.left, p.top);
+      }
+    }
+    if (foe) shape(foe, 'rl-foe');
+    let caps = '', capdim = '';
+    for (const h of s.hexes) {
+      if (!h.capital) continue;
+      const p = at(h.x, h.y);
+      if (h.afford) caps += hexPoly(p.left, p.top);
+      else capdim += hexPoly(p.left, p.top);
+    }
+    if (caps) shape(caps, 'rl-cap');
+    if (capdim) shape(capdim, 'rl-capdim');
+    field.appendChild(layer);
+  }
 
   // standings (humans tagged P1.. in hotseat games, current seat pulses)
   const order = [...s.players].sort((a, b) => b.hexes - a.hexes);
