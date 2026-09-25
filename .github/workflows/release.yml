@@ -91,9 +91,6 @@ jobs:
       - name: restore release keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/slay-release.keystore
 
-      - name: restore release keystore
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/slay-release.keystore
-
       - name: init Android project
         run: npx tauri android init
         env:
@@ -131,7 +128,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: slay-android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/app-*-release.apk
+          path: release-apks/*.apk
           if-no-files-found: error
 
       - name: attach APKs to release
