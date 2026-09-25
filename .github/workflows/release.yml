@@ -89,19 +89,26 @@ jobs:
 
       - run: npm ci
 
+      - name: restore release keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/slay-release.keystore
+
       - name: init Android project
         run: npx tauri android init
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      - name: build debug APK
-        run: npx tauri android build --debug
+      - name: build signed per-ABI release APKs
+        run: npx tauri android build --apk --split-per-abi
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          TAURI_ANDROID_KEYSTORE_PATH: /tmp/slay-release.keystore
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: slay-android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/app-*-release.apk
           if-no-files-found: error

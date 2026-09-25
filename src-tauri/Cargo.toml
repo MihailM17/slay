@@ -21,3 +21,10 @@ rand = "0.9"
 [features]
 default = [ "custom-protocol" ]
 custom-protocol = [ "tauri/custom-protocol" ]
+
+# small binaries for phone-sized downloads (turn-based: no perf cost)
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
