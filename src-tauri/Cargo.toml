@@ -1,6 +1,6 @@
 [package]
 name = "slay-island"
-version = "1.0.0"
+version = "1.0.1"
 description = "Slay hex strategy remake"
 edition = "2021"
 rust-version = "1.77"
