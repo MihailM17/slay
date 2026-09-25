@@ -55,8 +55,7 @@ jobs:
   # attach to the same tag release.
   android:
     permissions:
-      contents: read
-      actions: write
+      contents: write
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -108,9 +107,12 @@ jobs:
 
       - name: sign APKs with the release key
         run: |
+          shopt -s nullglob
+          ls src-tauri/gen/android/app/build/outputs/apk/*/
           mkdir -p release-apks
           for f in src-tauri/gen/android/app/build/outputs/apk/*/*-release-unsigned.apk; do
-            abi=$(basename $(dirname $(dirname "$f")))
+            dd=$(dirname "$f")
+            abi=$(basename "$(dirname "$dd")")
             out="release-apks/Slay_1.0.1_${abi}.apk"
             "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
               --ks /tmp/slay-release.keystore \
@@ -129,5 +131,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: slay-android-apk
-          path: release-apks/*.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/app-*-release.apk
           if-no-files-found: error
+
+      - name: attach APKs to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/gen/android/app/build/outputs/apk/**/app-*-release.apk
